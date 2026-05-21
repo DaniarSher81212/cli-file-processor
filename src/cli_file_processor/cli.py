@@ -26,6 +26,7 @@ from cli_file_processor.logging_config import setup_logging
 
 # Импортируем функции вывода из output.py — они отвечают за внешний вид
 from cli_file_processor.output import (
+    print_dry_run_results,
     print_error,
     print_process_results,
     print_scan_results,
@@ -144,6 +145,13 @@ def process(
         "-v",
         help="Показать подробный вывод (DEBUG-логи).",
     ),
+    # --dry-run: показать что БУДЕТ сделано, но ничего не делать.
+    # Паттерн "симуляция" — стандарт для деструктивных операций.
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Показать что будет скопировано без реального копирования.",
+    ),
 ) -> None:
     """
     Находит файлы с указанным расширением и копирует их в папку назначения.
@@ -167,15 +175,17 @@ def process(
         print_error(f"это не папка: {input_dir}")
         raise typer.Exit(code=1)
 
-    # Папку назначения НЕ проверяем на существование — processor.py создаст её сам.
-
-    # Находим файлы
+    # Находим файлы — одинаково и в обычном режиме, и в dry-run
     files = scan_files(input_dir=input_dir, extension=extension)
 
     if not files:
         print_warning(f"файлы с расширением {extension} не найдены.")
         return
 
-    # Копируем с прогресс-баром и выводим итог
-    processed = process_files_with_progress(files, output_dir)
-    print_process_results(processed, output_dir)
+    if dry_run:
+        # Только показываем что было бы сделано — файлы не трогаем
+        print_dry_run_results(files, output_dir)
+    else:
+        # Копируем с прогресс-баром и выводим итог
+        processed = process_files_with_progress(files, output_dir)
+        print_process_results(processed, output_dir)

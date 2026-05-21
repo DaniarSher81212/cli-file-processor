@@ -216,3 +216,85 @@ def test_process_creates_output_dir(tmp_path: Path):
 
     assert result.exit_code == 0
     assert output_dir.exists()
+
+
+# ─────────────────────────────────────────────
+# Тесты флага --dry-run
+# ─────────────────────────────────────────────
+
+def test_dry_run_does_not_copy_files(tmp_path: Path):
+    # Главное свойство dry-run: файлы НЕ должны копироваться
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    output_dir = tmp_path / "output"
+
+    (input_dir / "file.txt").write_text("содержимое")
+
+    runner.invoke(app, [
+        "process",
+        "--input-dir", str(input_dir),
+        "--output-dir", str(output_dir),
+        "--extension", ".txt",
+        "--dry-run",
+    ])
+
+    # output_dir не должна быть создана — копирования не было
+    assert not output_dir.exists()
+
+
+def test_dry_run_shows_filenames(tmp_path: Path):
+    # dry-run должен показать имена файлов которые БЫЛИ БЫ скопированы
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    output_dir = tmp_path / "output"
+
+    (input_dir / "report.txt").write_text("")
+
+    result = runner.invoke(app, [
+        "process",
+        "--input-dir", str(input_dir),
+        "--output-dir", str(output_dir),
+        "--extension", ".txt",
+        "--dry-run",
+    ])
+
+    assert result.exit_code == 0
+    assert "report.txt" in result.output
+
+
+def test_dry_run_shows_destination(tmp_path: Path):
+    # dry-run должен показать куда файлы БЫЛИ БЫ скопированы
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    output_dir = tmp_path / "output"
+
+    (input_dir / "file.txt").write_text("")
+
+    result = runner.invoke(app, [
+        "process",
+        "--input-dir", str(input_dir),
+        "--output-dir", str(output_dir),
+        "--extension", ".txt",
+        "--dry-run",
+    ])
+
+    assert result.exit_code == 0
+    # Путь назначения должен быть в выводе
+    assert str(output_dir) in result.output
+
+
+def test_dry_run_exits_successfully(tmp_path: Path):
+    # dry-run — это не ошибка, exit code должен быть 0
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    (input_dir / "file.txt").write_text("")
+
+    result = runner.invoke(app, [
+        "process",
+        "--input-dir", str(input_dir),
+        "--output-dir", str(tmp_path / "output"),
+        "--extension", ".txt",
+        "--dry-run",
+    ])
+
+    assert result.exit_code == 0

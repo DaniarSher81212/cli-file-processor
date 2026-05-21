@@ -133,3 +133,30 @@ def print_process_results(processed: list[Path], output_dir: Path) -> None:
         f"\nГотово: скопировано [bold green]{len(processed)}[/bold green] файл(ов) "
         f"в [cyan]{output_dir}[/cyan]"
     )
+
+
+def print_dry_run_results(files: list[Path], output_dir: Path) -> None:
+    """
+    Выводит предпросмотр команды process в режиме --dry-run.
+
+    Показывает что БЫЛО БЫ сделано без реального копирования.
+    """
+    # Жёлтый заголовок — сигнал что это не реальное действие
+    console.print("\n[bold yellow]Предпросмотр (--dry-run) — файлы НЕ будут скопированы[/bold yellow]\n")
+
+    # Таблица: что → куда
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Файл", style="white")
+    table.add_column("Куда будет скопирован", style="dim")
+
+    for file_path in files:
+        # Строим путь назначения так же как это делает processor.py
+        # но файл НЕ копируем
+        destination = output_dir / file_path.name
+        table.add_row(file_path.name, str(destination))
+
+    console.print(table)
+    console.print(
+        f"\nИтого: [bold]{len(files)}[/bold] файл(ов) будет скопировано в [cyan]{output_dir}[/cyan]"
+    )
+    console.print("[dim]Запустите без --dry-run чтобы применить изменения.[/dim]")
