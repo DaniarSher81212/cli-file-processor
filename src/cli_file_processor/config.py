@@ -42,3 +42,7 @@ def get_default_extension() -> str:
 
 def get_default_output_dir() -> Path:
     return Path(os.getenv("DEFAULT_OUTPUT_DIR", "data/output"))
+
+
+def get_app_version() -> str:
+    return "0.1.0"
