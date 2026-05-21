@@ -11,7 +11,7 @@ from pathlib import Path
 import typer
 
 # Импортируем функции из config.py — они читают настройки из .env
-from cli_file_processor.config import get_default_extension, get_default_input_dir, get_default_output_dir
+from cli_file_processor.config import get_app_version, get_default_extension, get_default_input_dir, get_default_output_dir
 
 # Импортируем бизнес-логику поиска файлов из core/scanner.py
 from cli_file_processor.core.scanner import scan_files
@@ -43,6 +43,14 @@ def check() -> None:
     Проверяет, что CLI-приложение запускается.
     """
     typer.echo("Project check: OK")
+
+
+@app.command()
+def version() -> None:
+    """
+    Показывает версию приложения.
+    """
+    typer.echo(get_app_version())
 
 
 @app.command()
