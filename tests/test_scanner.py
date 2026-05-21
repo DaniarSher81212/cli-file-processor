@@ -9,7 +9,6 @@ from pathlib import Path
 
 from cli_file_processor.core.scanner import normalize_extension, scan_files
 
-
 # ─────────────────────────────────────────────
 # Тесты для normalize_extension
 # ─────────────────────────────────────────────

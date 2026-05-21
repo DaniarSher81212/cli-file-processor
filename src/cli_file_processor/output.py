@@ -11,13 +11,12 @@ from pathlib import Path
 # Он умеет: цвета, таблицы, прогресс-бары, форматирование.
 from rich.console import Console
 
-# Table — объект для построения таблиц с рамками и колонками.
-from rich.table import Table
-
 # track() — оборачивает любой итерируемый объект и показывает прогресс-бар.
 # Использование: for item in track(items, description="..."):
 from rich.progress import track
 
+# Table — объект для построения таблиц с рамками и колонками.
+from rich.table import Table
 
 # Создаём один Console на весь модуль.
 # highlight=False — отключает автоподсветку чисел и строк (нам не нужна).

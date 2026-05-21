@@ -14,7 +14,6 @@ from typer.testing import CliRunner
 # Импортируем объект app — это наше CLI приложение
 from cli_file_processor.cli import app
 
-
 # Создаём один runner на весь файл — он переиспользуется во всех тестах.
 # mix_stderr=False — разделяет stdout (обычный вывод) и stderr (ошибки).
 runner = CliRunner()

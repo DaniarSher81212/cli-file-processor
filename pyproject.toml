@@ -14,6 +14,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "ruff>=0.4.0",
 ]
 
 [project.scripts]
@@ -24,3 +25,29 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+
+# ─── Настройки Ruff ───────────────────────────────────────────────────────────
+
+[tool.ruff]
+# Максимальная длина строки. PEP8 рекомендует 79, на практике часто 88-100.
+line-length = 100
+
+# Папки которые Ruff проверяет
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Какие правила включить. Каждая буква — группа правил:
+# E, W — ошибки и предупреждения стиля (pycodestyle)
+# F     — логические ошибки Python (pyflakes): неиспользуемые импорты, переменные
+# I     — порядок импортов (isort)
+# UP    — предложения по современному синтаксису Python (pyupgrade)
+select = ["E", "W", "F", "I", "UP"]
+
+# Правила которые отключаем:
+# E501 — длина строки (мы сами контролируем через line-length)
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+# Ruff знает что код лежит в src/ — правильно сортирует импорты
+known-first-party = ["cli_file_processor"]

@@ -11,7 +11,12 @@ from pathlib import Path
 import typer
 
 # Импортируем функции из config.py — они читают настройки из .env
-from cli_file_processor.config import get_app_version, get_default_extension, get_default_input_dir, get_default_output_dir
+from cli_file_processor.config import (
+    get_app_version,
+    get_default_extension,
+    get_default_input_dir,
+    get_default_output_dir,
+)
 
 # Импортируем бизнес-логику поиска файлов из core/scanner.py
 from cli_file_processor.core.scanner import scan_files
@@ -27,7 +32,6 @@ from cli_file_processor.output import (
     print_warning,
     process_files_with_progress,
 )
-
 
 # typer.Typer() — создаём объект приложения. Это "контейнер" для всех команд.
 # help= — текст, который появляется при запуске: cli-file-processor --help

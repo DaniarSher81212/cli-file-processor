@@ -7,15 +7,13 @@
 
 # Path — современный способ работы с путями файловой системы в Python.
 # Вместо строки "/home/user/data" используем объект Path со своими методами.
+# os — стандартная библиотека. os.getenv() читает переменные окружения.
+import os
 from pathlib import Path
 
 # load_dotenv — функция из библиотеки python-dotenv.
 # Она читает файл .env и кладёт переменные в os.environ.
 from dotenv import load_dotenv
-
-# os — стандартная библиотека. os.getenv() читает переменные окружения.
-import os
-
 
 # load_dotenv() вызывается прямо при импорте модуля.
 # Алгоритм: ищет .env в текущей папке → читает строки KEY=VALUE → кладёт в os.environ.

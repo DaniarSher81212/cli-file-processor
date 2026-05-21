@@ -10,7 +10,6 @@ import logging
 # Path — объект для работы с путями. Умеет: .exists(), .is_dir(), .glob(), и многое другое.
 from pathlib import Path
 
-
 # logging.getLogger(__name__) — создаём логгер для этого модуля.
 # __name__ — специальная переменная Python. Внутри модуля она равна его полному имени:
 # "cli_file_processor.core.scanner". Это позволяет фильтровать логи по модулям.
