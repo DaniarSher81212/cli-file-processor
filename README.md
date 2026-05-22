@@ -20,6 +20,11 @@
    - [Тема 6 — Красивый вывод с Rich](#тема-6--красивый-вывод-с-rich)
    - [Тема 7 — Работа с файлами и путями](#тема-7--работа-с-файлами-и-путями)
    - [Тема 8 — Разделение ответственности](#тема-8--разделение-ответственности)
+   - [Тема 9 — Версионирование: команда version](#тема-9--версионирование-команда-version)
+   - [Тема 10 — Паттерн --dry-run](#тема-10--паттерн---dry-run)
+   - [Тема 11 — Линтер и форматтер: Ruff](#тема-11--линтер-и-форматтер-ruff)
+   - [Тема 12 — Pre-commit хуки](#тема-12--pre-commit-хуки)
+   - [Тема 13 — Рекурсивный поиск: флаг --recursive](#тема-13--рекурсивный-поиск-флаг---recursive)
 6. [Зависимости](#зависимости)
 
 ---
@@ -28,12 +33,18 @@
 
 ```
 cli-file-processor scan    --input-dir data/input --extension .txt
+cli-file-processor scan    --input-dir data/input --extension .txt --recursive
 cli-file-processor process --input-dir data/input --output-dir data/output --extension .pdf
+cli-file-processor process --input-dir data/input --output-dir data/output --dry-run
+cli-file-processor version
 ```
 
 - **scan** — находит файлы с нужным расширением и показывает их в таблице
 - **process** — находит файлы и копирует их в папку назначения с прогресс-баром
 - **check** — проверяет что CLI работает
+- **version** — показывает текущую версию приложения
+
+Оба `scan` и `process` поддерживают флаги `--recursive` (поиск во вложенных папках) и `--dry-run` (предпросмотр без реального действия).
 
 ---
 
@@ -43,6 +54,7 @@ cli-file-processor process --input-dir data/input --output-dir data/output --ext
 cli_file_processor/
 │
 ├── pyproject.toml              ← паспорт проекта: зависимости, entry point, версия
+├── .pre-commit-config.yaml     ← хуки, которые запускаются перед каждым git commit
 ├── .env                        ← настройки для локальной машины (не в git)
 ├── .env.example                ← шаблон настроек (в git, для других разработчиков)
 │
@@ -53,12 +65,12 @@ cli_file_processor/
 ├── src/
 │   └── cli_file_processor/
 │       ├── main.py             ← тонкая точка входа (запуск через python -m)
-│       ├── cli.py              ← команды CLI: check, scan, process
-│       ├── config.py           ← чтение настроек из .env
+│       ├── cli.py              ← команды CLI: check, version, scan, process
+│       ├── config.py           ← чтение настроек из .env + версия приложения
 │       ├── logging_config.py   ← настройка уровней логирования
-│       ├── output.py           ← Rich: таблицы, цвета, прогресс-бар
+│       ├── output.py           ← Rich: таблицы, цвета, прогресс-бар, dry-run вывод
 │       └── core/
-│           ├── scanner.py      ← бизнес-логика поиска файлов
+│           ├── scanner.py      ← бизнес-логика поиска файлов (glob / rglob)
 │           └── processor.py    ← бизнес-логика копирования файлов
 │
 └── tests/
@@ -83,8 +95,11 @@ source .venv/bin/activate       # Linux / Mac
 # Установить проект и зависимости
 pip install -e .
 
-# Установить зависимости для разработки (pytest)
+# Установить зависимости для разработки (pytest, ruff, pre-commit)
 pip install -e ".[dev]"
+
+# Установить pre-commit хуки (только один раз на репозиторий)
+pre-commit install
 
 # Скопировать шаблон настроек
 cp .env.example .env
@@ -101,6 +116,13 @@ cli-file-processor check
 # Project check: OK
 ```
 
+### `version` — текущая версия
+
+```bash
+cli-file-processor version
+# 0.1.0
+```
+
 ### `scan` — поиск файлов
 
 ```bash
@@ -113,11 +135,14 @@ cli-file-processor scan -i data/input -e .txt
 # Подробный вывод (DEBUG-логи)
 cli-file-processor scan -i data/input -e .txt --verbose
 
+# Рекурсивный поиск — включая все вложенные подпапки
+cli-file-processor scan -i data/input -e .txt --recursive
+
 # Без параметров — берёт дефолты из .env
 cli-file-processor scan
 ```
 
-Вывод:
+Вывод (обычный режим):
 ```
 ┏━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┓
 ┃ Файл      ┃ Расширение ┃ Размер ┃
@@ -128,17 +153,50 @@ cli-file-processor scan
 Найдено: 2 файл(ов)
 ```
 
+Вывод (режим `--recursive` — видны подпапки):
+```
+┏━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┓
+┃ Файл                 ┃ Расширение ┃ Размер ┃
+┡━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━┩
+│ file1.txt            │ .txt       │ 1.2 KB │
+│ reports/monthly.txt  │ .txt       │ 3.4 KB │
+└──────────────────────┴────────────┴────────┘
+Найдено: 2 файл(ов)
+```
+
 ### `process` — копирование файлов
 
 ```bash
+# Обычное копирование
 cli-file-processor process --input-dir data/input --output-dir data/output --extension .txt
+
+# Предпросмотр без реального копирования
+cli-file-processor process -i data/input -o data/output -e .txt --dry-run
+
+# Рекурсивный поиск + копирование
+cli-file-processor process -i data/input -o data/output -e .txt --recursive
 ```
 
-Вывод:
+Вывод (обычный режим):
 ```
 Копирование файлов... ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% 0:00:00
 
 Готово: скопировано 2 файл(ов) в data/output
+```
+
+Вывод (режим `--dry-run`):
+```
+Предпросмотр (--dry-run) — файлы НЕ будут скопированы
+
+┏━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Файл      ┃ Куда будет скопирован          ┃
+┡━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ file1.txt │ data/output/file1.txt          │
+│ file2.txt │ data/output/file2.txt          │
+└───────────┴────────────────────────────────┘
+
+Итого: 2 файл(ов) будет скопировано в data/output
+Запустите без --dry-run чтобы применить изменения.
 ```
 
 ### Запуск тестов
@@ -178,7 +236,11 @@ cli-file-processor = "cli_file_processor.cli:app"
 
 # Зависимости только для разработки — не нужны пользователю инструмента
 [project.optional-dependencies]
-dev = ["pytest>=8.0.0"]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+    "pre-commit>=3.7.0",
+]
 ```
 
 **Концепция src-layout:**
@@ -389,9 +451,9 @@ def test_scan_fails_when_dir_not_found():
 ```
 test_<что_проверяем>_<при_каком_условии>
 
-test_normalize_extension_adds_dot          ← добавляет точку
+test_normalize_extension_adds_dot           ← добавляет точку
 test_scan_files_returns_empty_when_no_match ← пустой список если нет совпадений
-test_process_fails_when_input_missing      ← ошибка если папка не найдена
+test_process_fails_when_input_missing       ← ошибка если папка не найдена
 ```
 
 **Итого тестов в проекте: 32**
@@ -429,7 +491,7 @@ console.print(f"Найдено: [bold]{len(files)}[/bold] файл(ов)")
 from rich.table import Table
 
 table = Table(show_header=True, header_style="bold cyan")
-table.add_column("Файл",       style="white", no_wrap=True)
+table.add_column("Файл",       style="white")
 table.add_column("Расширение", style="dim")
 table.add_column("Размер",     justify="right", style="green")
 
@@ -471,9 +533,9 @@ path = Path("data/input/file.txt")
 path.exists()          # True если путь существует
 path.is_dir()          # True если это папка
 path.is_file()         # True если это файл
-path.name              # "file.txt"      — только имя файла
-path.suffix            # ".txt"          — расширение
-path.stem              # "file"          — имя без расширения
+path.name              # "file.txt"        — только имя файла
+path.suffix            # ".txt"            — расширение
+path.stem              # "file"            — имя без расширения
 path.parent            # Path("data/input") — родительская папка
 path.stat().st_size    # размер файла в байтах
 
@@ -528,7 +590,7 @@ list(folder.rglob("*.txt"))    # ["folder/a.txt", "folder/sub/c.txt"]
 
 ```
 cli.py          ← ТОЛЬКО: принять параметры, провалидировать, вызвать нужные функции
-config.py       ← ТОЛЬКО: читать настройки из .env
+config.py       ← ТОЛЬКО: читать настройки из .env и хранить версию
 logging_config  ← ТОЛЬКО: настроить уровень логирования
 output.py       ← ТОЛЬКО: решать как данные выглядят (Rich, таблицы, цвета)
 scanner.py      ← ТОЛЬКО: находить файлы по расширению
@@ -539,10 +601,10 @@ processor.py    ← ТОЛЬКО: копировать файлы
 
 ```python
 # cli.py — команда scan
-def scan(input_dir, extension, verbose):
+def scan(input_dir, extension, verbose, recursive):
     setup_logging(verbose)               # → logging_config.py
     input_dir = get_default_input_dir()  # → config.py
-    files = scan_files(input_dir, ext)   # → scanner.py  (бизнес-логика)
+    files = scan_files(input_dir, ext, recursive)  # → scanner.py (бизнес-логика)
     print_scan_results(files)            # → output.py   (отображение)
 ```
 
@@ -555,14 +617,384 @@ CLI не знает КАК ищутся файлы и КАК они отобра
 
 ---
 
+### Тема 9 — Версионирование: команда version
+
+**Файлы:** `config.py`, `cli.py`
+
+**Зачем нужна версия в CLI-инструменте:**  
+Версия позволяет пользователю и системам CI понять, какая именно сборка
+установлена. Стандартный паттерн: `tool --version` или `tool version`.
+
+**Где хранить версию:**
+
+В этом проекте версия хранится в `config.py` — в одном месте, откуда её
+может взять любой модуль:
+
+```python
+# config.py
+def get_app_version() -> str:
+    return "0.1.0"
+```
+
+Альтернативный подход (продвинутый) — читать версию из `pyproject.toml` через
+`importlib.metadata`, чтобы она была в одном месте:
+
+```python
+from importlib.metadata import version
+def get_app_version() -> str:
+    return version("cli-file-processor")
+```
+
+**Команда в CLI:**
+
+```python
+# cli.py
+@app.command()
+def version() -> None:
+    """
+    Показывает версию приложения.
+    """
+    typer.echo(get_app_version())
+```
+
+**Запуск:**
+```bash
+cli-file-processor version
+# 0.1.0
+```
+
+---
+
+### Тема 10 — Паттерн --dry-run
+
+**Файлы:** `cli.py`, `output.py`
+
+**Что такое dry-run:**  
+"Симуляция" — показывает что произойдёт, но ничего не делает. Стандартный паттерн
+для команд, которые изменяют файлы, базы данных или отправляют запросы. Даёт
+пользователю возможность проверить перед тем как применить.
+
+**Пример из реальных инструментов:**
+```bash
+rsync --dry-run ...     # синхронизация файлов — показывает без копирования
+ansible-playbook --check  # применение конфигураций — симуляция
+terraform plan          # изменения инфраструктуры — предпросмотр
+```
+
+**Как реализован в проекте:**
+
+```python
+# cli.py — флаг --dry-run в команде process
+dry_run: bool = typer.Option(
+    False,
+    "--dry-run",
+    help="Показать что будет скопировано без реального копирования.",
+)
+
+# В теле команды — одна развилка:
+if dry_run:
+    print_dry_run_results(files, output_dir)   # только показываем
+else:
+    processed = process_files_with_progress(files, output_dir)  # реально копируем
+    print_process_results(processed, output_dir)
+```
+
+**Вывод dry-run в `output.py`:**
+
+```python
+def print_dry_run_results(files: list[Path], output_dir: Path) -> None:
+    console.print(
+        "\n[bold yellow]Предпросмотр (--dry-run) — файлы НЕ будут скопированы[/bold yellow]\n"
+    )
+
+    table = Table(show_header=True, header_style="bold cyan")
+    table.add_column("Файл", style="white")
+    table.add_column("Куда будет скопирован", style="dim")
+
+    for file_path in files:
+        destination = output_dir / file_path.name  # строим путь — но НЕ копируем
+        table.add_row(file_path.name, str(destination))
+
+    console.print(table)
+    console.print("[dim]Запустите без --dry-run чтобы применить изменения.[/dim]")
+```
+
+**Ключевое:** `print_dry_run_results` использует ту же логику построения пути
+(`output_dir / file_path.name`), что и настоящее копирование в `processor.py`.
+Это гарантирует что предпросмотр точно соответствует реальному поведению.
+
+---
+
+### Тема 11 — Линтер и форматтер: Ruff
+
+**Файл:** `pyproject.toml` (секция `[tool.ruff]`)
+
+**Что такое линтер и форматтер:**
+
+```
+Линтер    — проверяет код на ошибки и плохой стиль, но не меняет файлы
+Форматтер — автоматически переформатирует код в единый стиль
+```
+
+**Ruff** — современный инструмент на Rust, который объединяет оба: заменяет
+`flake8` (линтер), `isort` (сортировка импортов), `pyupgrade` (современный синтаксис)
+и `black` (форматтер). Работает в 10-100 раз быстрее аналогов.
+
+**Конфигурация в `pyproject.toml`:**
+
+```toml
+[tool.ruff]
+line-length = 100       # максимальная длина строки (PEP8 = 79, на практике 88-100)
+src = ["src", "tests"]  # папки с кодом — Ruff правильно сортирует импорты
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP"]
+# E, W — ошибки и предупреждения стиля (pycodestyle)
+# F     — логические ошибки: неиспользуемые импорты, переменные (pyflakes)
+# I     — порядок импортов (isort)
+# UP    — предложения по современному синтаксису Python (pyupgrade)
+ignore = ["E501"]       # E501 = длина строки (контролируем сами через line-length)
+
+[tool.ruff.lint.isort]
+known-first-party = ["cli_file_processor"]   # свои модули — отдельная группа импортов
+
+[tool.ruff.format]
+quote-style = "double"          # строки в двойных кавычках
+indent-style = "space"          # отступы пробелами (не табами)
+skip-magic-trailing-comma = false  # не убирать trailing comma если она поставлена намеренно
+```
+
+**Команды:**
+
+```bash
+# Проверка — только показывает ошибки, ничего не меняет
+ruff check src/
+
+# Проверка + автоисправление (безопасных ошибок)
+ruff check src/ --fix
+
+# Форматирование — переформатирует файлы
+ruff format src/
+
+# Предпросмотр форматирования — показывает что изменится, не меняет
+ruff format src/ --check
+```
+
+**Что ruff format делает с кодом — примеры:**
+
+```python
+# До форматирования
+app = typer.Typer(
+    help="CLI File Processor — инструмент для обработки файлов."
+)
+
+# После форматирования (если строка вмещается в line-length)
+app = typer.Typer(help="CLI File Processor — инструмент для обработки файлов.")
+```
+
+```python
+# До — длинная строка
+console.print("\n[bold yellow]Предпросмотр (--dry-run) — файлы НЕ будут скопированы[/bold yellow]\n")
+
+# После — разбита на строки чтобы не превышать line-length
+console.print(
+    "\n[bold yellow]Предпросмотр (--dry-run) — файлы НЕ будут скопированы[/bold yellow]\n"
+)
+```
+
+**Группы импортов, которые создаёт isort (I):**
+
+```python
+# 1. Стандартная библиотека Python
+import logging
+from pathlib import Path
+
+# 2. Сторонние библиотеки (установленные через pip)
+import typer
+from rich.console import Console
+
+# 3. Свои модули проекта (known-first-party)
+from cli_file_processor.config import get_default_input_dir
+```
+
+---
+
+### Тема 12 — Pre-commit хуки
+
+**Файл:** `.pre-commit-config.yaml`
+
+**Что такое pre-commit хуки:**  
+Git позволяет запускать скрипты перед коммитом. `pre-commit` — инструмент
+для управления такими скриптами. Если хук падает — коммит не создаётся.
+Это гарантирует что в репозиторий не попадёт плохо оформленный код.
+
+**Конфигурация `.pre-commit-config.yaml`:**
+
+```yaml
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.0        # конкретная версия — воспроизводимость
+    hooks:
+      - id: ruff
+        args: [--fix]  # ruff check --fix: проверяет и исправляет автоматически
+      - id: ruff-format # ruff format: форматирует код
+```
+
+**Установка и использование:**
+
+```bash
+# Установить pre-commit (один раз для проекта)
+pip install pre-commit
+
+# Зарегистрировать хуки в репозитории (один раз, после clone)
+pre-commit install
+# → pre-commit installed at .git/hooks/pre-commit
+
+# Теперь при каждом git commit хуки запускаются автоматически:
+git commit -m "my changes"
+# ruff.....................................................................Passed
+# ruff-format..............................................................Passed
+# [main abc1234] my changes
+```
+
+**Что происходит если хук находит проблему:**
+
+```bash
+git commit -m "bad code"
+# ruff.....................................................................Failed
+# - hook id: ruff
+# - exit code: 1
+# src/cli_file_processor/cli.py:5:1: F401 'os' imported but unused
+```
+
+Коммит не создаётся. Нужно исправить ошибку, снова `git add` и `git commit`.
+
+**Цикл работы с pre-commit:**
+
+```
+Пишешь код → git add → git commit
+                              ↓
+                        pre-commit запускает ruff check --fix
+                              ↓ (если нашёл и исправил)
+                        Файлы изменены → коммит отменён
+                              ↓
+                        git add (снова) → git commit
+                              ↓
+                        ruff check: Passed
+                        ruff-format: Passed
+                              ↓
+                        Коммит создан ✓
+```
+
+**При первом коммите** pre-commit скачивает и устанавливает окружение с ruff.
+Это занимает ~30 секунд. При следующих коммитах — мгновенно (окружение кешируется).
+
+**Запуск хуков вручную (без коммита):**
+```bash
+pre-commit run --all-files   # проверить все файлы
+pre-commit run ruff          # запустить только один хук
+```
+
+---
+
+### Тема 13 — Рекурсивный поиск: флаг --recursive
+
+**Файлы:** `cli.py`, `core/scanner.py`, `output.py`
+
+**Задача:** по умолчанию `scan` и `process` ищут файлы только в указанной папке.
+Флаг `--recursive` включает поиск во всех вложенных подпапках.
+
+**Пример структуры:**
+```
+data/input/
+├── report.txt          ← найдёт и без --recursive
+├── notes.txt           ← найдёт и без --recursive
+└── reports/
+    └── monthly.txt     ← найдёт ТОЛЬКО с --recursive
+```
+
+**Изменения в `scanner.py`:**
+
+```python
+def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> list[Path]:
+    normalized_extension = normalize_extension(extension)
+
+    if recursive:
+        # rglob("*.txt") — рекурсивный поиск: текущая папка + все вложенные.
+        # "r" в rglob означает recursive.
+        files = list(input_dir.rglob(f"*{normalized_extension}"))
+    else:
+        # glob("*.txt") — поиск только в указанной папке.
+        files = list(input_dir.glob(f"*{normalized_extension}"))
+
+    return files
+```
+
+**`glob` vs `rglob` — наглядное сравнение:**
+
+```python
+# Структура: data/input/a.txt, data/input/sub/b.txt
+
+list(Path("data/input").glob("*.txt"))
+# → [Path("data/input/a.txt")]           # только корень
+
+list(Path("data/input").rglob("*.txt"))
+# → [Path("data/input/a.txt"),
+#    Path("data/input/sub/b.txt")]        # корень + все подпапки
+```
+
+**Изменения в `output.py` — относительные пути:**
+
+В режиме `--recursive` важно показать пользователю в какой именно подпапке
+находится файл. Для этого `print_scan_results` принимает аргумент `base_dir`:
+
+```python
+def print_scan_results(files: list[Path], base_dir: Path | None = None) -> None:
+    for file_path in files:
+        if base_dir is not None:
+            # .relative_to(base_dir) — делает путь относительным
+            # Path("data/input/reports/monthly.txt").relative_to(Path("data/input"))
+            # → Path("reports/monthly.txt")
+            display_name = str(file_path.relative_to(base_dir))
+        else:
+            display_name = file_path.name  # просто "monthly.txt"
+
+        table.add_row(display_name, file_path.suffix, _format_size(size))
+```
+
+**Изменения в `cli.py` — как передаётся `base_dir`:**
+
+```python
+# Если режим --recursive — передаём input_dir, чтобы таблица показывала
+# относительные пути. Если нет — передаём None (обычный вывод).
+print_scan_results(files, base_dir=input_dir if recursive else None)
+```
+
+**Флаг добавлен в обе команды — `scan` и `process`:**
+
+```python
+recursive: bool = typer.Option(
+    False,
+    "--recursive",
+    "-r",
+    help="Искать файлы во всех вложенных подпапках.",
+)
+```
+
+Короткий флаг `-r` позволяет писать компактно: `cli-file-processor scan -i data/input -e .txt -r`
+
+---
+
 ## Зависимости
 
-| Библиотека | Назначение | Установка |
-|------------|-----------|-----------|
+| Библиотека | Назначение | Тип |
+|------------|-----------|-----|
 | `typer` | Создание CLI команд, парсинг аргументов | основная |
 | `python-dotenv` | Чтение `.env` файлов | основная |
 | `rich` | Цвета, таблицы, прогресс-бар в терминале | основная |
 | `pytest` | Запуск и организация тестов | dev |
+| `ruff` | Линтер + форматтер кода | dev |
+| `pre-commit` | Автозапуск проверок перед git commit | dev |
 
 **Стандартные библиотеки Python (не нужно устанавливать):**
 
