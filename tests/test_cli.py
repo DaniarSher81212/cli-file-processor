@@ -20,6 +20,21 @@ runner = CliRunner()
 
 
 # ─────────────────────────────────────────────
+# Тесты команды version
+# ─────────────────────────────────────────────
+
+
+def test_version_command_succeeds():
+    result = runner.invoke(app, ["version"])
+    assert result.exit_code == 0
+
+
+def test_version_command_output():
+    result = runner.invoke(app, ["version"])
+    assert "0.1.0" in result.output
+
+
+# ─────────────────────────────────────────────
 # Тесты команды check
 # ─────────────────────────────────────────────
 
@@ -335,6 +350,92 @@ def test_dry_run_shows_destination(tmp_path: Path):
     assert result.exit_code == 0
     # Путь назначения должен быть в выводе
     assert str(output_dir) in result.output
+
+
+# ─────────────────────────────────────────────
+# Тесты флага --recursive
+# ─────────────────────────────────────────────
+
+
+def test_scan_recursive_finds_files_in_subdirs(tmp_path: Path):
+    # Файл в корне и файл во вложенной папке
+    (tmp_path / "root.txt").touch()
+    subdir = tmp_path / "reports"
+    subdir.mkdir()
+    (subdir / "monthly.txt").touch()
+
+    result = runner.invoke(
+        app, ["scan", "--input-dir", str(tmp_path), "--extension", ".txt", "--recursive"]
+    )
+
+    assert result.exit_code == 0
+    assert "2" in result.output
+
+
+def test_scan_recursive_shows_relative_paths(tmp_path: Path):
+    # В режиме --recursive таблица должна показывать путь относительно input_dir
+    subdir = tmp_path / "reports"
+    subdir.mkdir()
+    (subdir / "monthly.txt").touch()
+
+    result = runner.invoke(
+        app, ["scan", "--input-dir", str(tmp_path), "--extension", ".txt", "--recursive"]
+    )
+
+    assert result.exit_code == 0
+    # Путь "reports/monthly.txt", а не просто "monthly.txt"
+    assert "reports" in result.output
+
+
+def test_scan_non_recursive_excludes_subdirs(tmp_path: Path):
+    # Без --recursive файлы во вложенных папках не должны находиться
+    (tmp_path / "root.txt").touch()
+    subdir = tmp_path / "reports"
+    subdir.mkdir()
+    (subdir / "monthly.txt").touch()
+
+    result = runner.invoke(app, ["scan", "--input-dir", str(tmp_path), "--extension", ".txt"])
+
+    assert result.exit_code == 0
+    assert "1" in result.output
+
+
+def test_process_fails_when_input_is_file(tmp_path: Path):
+    # Передаём путь к файлу вместо папки в --input-dir
+    some_file = tmp_path / "iam_a_file.txt"
+    some_file.touch()
+
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(some_file),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--extension",
+            ".txt",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "не папка" in result.output
+
+
+def test_scan_shows_kb_size(tmp_path: Path):
+    # Файл > 1024 байт — размер должен отображаться в KB
+    large_file = tmp_path / "large.txt"
+    large_file.write_bytes(b"x" * 2048)
+
+    result = runner.invoke(app, ["scan", "--input-dir", str(tmp_path), "--extension", ".txt"])
+
+    assert result.exit_code == 0
+    assert "KB" in result.output
+
+
+# ─────────────────────────────────────────────
+# Тесты флага --dry-run
+# ─────────────────────────────────────────────
 
 
 def test_dry_run_exits_successfully(tmp_path: Path):

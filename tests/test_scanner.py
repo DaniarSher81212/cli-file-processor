@@ -113,3 +113,28 @@ def test_scan_files_empty_directory(tmp_path: Path):
     result = scan_files(input_dir=tmp_path, extension=".txt")
 
     assert result == []
+
+
+def test_scan_files_recursive_finds_in_subdirs(tmp_path: Path):
+    # Файл в корне и файл во вложенной папке
+    (tmp_path / "root.txt").touch()
+    subdir = tmp_path / "sub"
+    subdir.mkdir()
+    (subdir / "nested.txt").touch()
+
+    result = scan_files(input_dir=tmp_path, extension=".txt", recursive=True)
+
+    assert len(result) == 2
+
+
+def test_scan_files_non_recursive_excludes_subdirs(tmp_path: Path):
+    # Без recursive=True файлы в подпапках не должны попадать в результат
+    (tmp_path / "root.txt").touch()
+    subdir = tmp_path / "sub"
+    subdir.mkdir()
+    (subdir / "nested.txt").touch()
+
+    result = scan_files(input_dir=tmp_path, extension=".txt", recursive=False)
+
+    assert len(result) == 1
+    assert result[0].name == "root.txt"

@@ -31,4 +31,4 @@ jobs:
         run: ruff format --check src/ tests/
 
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/ -v --cov=src/cli_file_processor --cov-report=term-missing --cov-fail-under=90
