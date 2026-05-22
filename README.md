@@ -43,6 +43,7 @@
    - [Тема 29 — Makefile: стандартные команды проекта](#тема-29--makefile-стандартные-команды-проекта)
    - [Тема 30 — Pydantic Settings: типизированная конфигурация](#тема-30--pydantic-settings-типизированная-конфигурация)
    - [Тема 31 — FastAPI: REST-интерфейс поверх бизнес-логики](#тема-31--fastapi-rest-интерфейс-поверх-бизнес-логики)
+   - [Тема 32 — conftest.py: общие fixtures и parametrize](#тема-32--conftestpy-общие-fixtures-и-parametrize)
 6. [Зависимости](#зависимости)
 
 ---
@@ -2633,6 +2634,103 @@ def test_scan_nonexistent_dir_returns_404() -> None:
 ```
 
 **Итог:** бизнес-логика в `scanner.py` осталась без изменений — CLI и API просто два разных способа вызвать те же функции.
+
+---
+
+### Тема 32 — conftest.py: общие fixtures и parametrize
+
+**Файл:** `tests/conftest.py`
+
+**Проблема:** 60 тестов в 5 файлах — одинаковый setup-код в каждом тесте:
+```python
+# Это повторялось в 8 разных тестах:
+input_dir = tmp_path / "input"
+input_dir.mkdir()
+output_dir = tmp_path / "output"
+```
+
+**`conftest.py`** — специальный файл, который pytest находит автоматически. Все fixtures в нём доступны в любом тест-файле без явного импорта.
+
+**Что создали:**
+
+```python
+import pytest
+from pathlib import Path
+from collections.abc import Generator
+from fastapi.testclient import TestClient
+from cli_file_processor.api import app
+
+@pytest.fixture
+def sample_txt_dir(tmp_path: Path) -> Path:
+    """Папка с 2 .txt и 1 .pdf — стандартный набор для тестов scanner."""
+    (tmp_path / "file1.txt").touch()
+    (tmp_path / "file2.txt").touch()
+    (tmp_path / "report.pdf").touch()
+    return tmp_path
+
+@pytest.fixture
+def input_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "input"
+    d.mkdir()
+    return d
+
+@pytest.fixture
+def output_dir(tmp_path: Path) -> Path:
+    return tmp_path / "output"  # папка не создаётся — тест проверит это сам
+
+# scope="module" — один экземпляр на весь файл тестов (не на каждый тест)
+@pytest.fixture(scope="module")
+def api_client() -> Generator[TestClient, None, None]:
+    with TestClient(app) as client:
+        yield client  # setup выше, teardown (shutdown FastAPI) — после yield
+```
+
+**Ключевые концепции:**
+
+| Концепция | Что делает |
+|-----------|-----------|
+| `conftest.py` | pytest находит его автоматически, импорт не нужен |
+| `@pytest.fixture` | Функция становится фикстурой — pytest передаёт её по имени аргумента |
+| `scope="module"` | Фикстура создаётся один раз на файл (не на каждый тест) |
+| `yield` в fixture | Код до `yield` — setup, после — teardown |
+| `tmp_path` | Встроенная fixture pytest для временных файлов |
+
+**Важно про `tmp_path`:** если две фикстуры в одном тесте используют `tmp_path`, они получают один и тот же объект. Поэтому `input_dir` и `output_dir` живут в одной папке:
+
+```python
+def test_process(input_dir: Path, output_dir: Path):
+    # input_dir = /tmp/.../input/
+    # output_dir = /tmp/.../output/
+    # Одна и та же /tmp/.../ папка — pytest это гарантирует
+    (input_dir / "file.txt").write_text("data")
+    ...
+```
+
+**`@pytest.mark.parametrize`** — запускает один тест с разными данными:
+
+```python
+# До: 5 отдельных функций с одинаковой структурой
+def test_normalize_extension_adds_dot(): assert normalize_extension("txt") == ".txt"
+def test_normalize_extension_keeps_existing_dot(): assert normalize_extension(".txt") == ".txt"
+# ...
+
+# После: одна функция, 5 тест-кейсов
+@pytest.mark.parametrize("raw,expected", [
+    ("txt", ".txt"),
+    (".txt", ".txt"),
+    ("PDF", ".pdf"),
+    ("  .TXT  ", ".txt"),
+    ("  PDF  ", ".pdf"),
+])
+def test_normalize_extension(raw: str, expected: str) -> None:
+    assert normalize_extension(raw) == expected
+```
+
+Pytest показывает каждый кейс отдельно:
+```
+test_normalize_extension[txt-.txt] PASSED
+test_normalize_extension[PDF-.pdf] PASSED
+```
 
 ---
 
