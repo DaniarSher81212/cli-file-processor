@@ -42,6 +42,7 @@
    - [Тема 28 — Docker: контейнеризация](#тема-28--docker-контейнеризация)
    - [Тема 29 — Makefile: стандартные команды проекта](#тема-29--makefile-стандартные-команды-проекта)
    - [Тема 30 — Pydantic Settings: типизированная конфигурация](#тема-30--pydantic-settings-типизированная-конфигурация)
+   - [Тема 31 — FastAPI: REST-интерфейс поверх бизнес-логики](#тема-31--fastapi-rest-интерфейс-поверх-бизнес-логики)
 6. [Зависимости](#зависимости)
 
 ---
@@ -2542,6 +2543,99 @@ pip install pydantic-settings
 
 ---
 
+### Тема 31 — FastAPI: REST-интерфейс поверх бизнес-логики
+
+**Файл:** `src/cli_file_processor/api.py`
+
+**Идея:** та же бизнес-логика (`scan_files()`) — два интерфейса: CLI и REST API. `scanner.py` не знает ни о том, ни о другом.
+
+**Что реализовали:**
+
+```python
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
+from cli_file_processor.config import settings
+from cli_file_processor.core.scanner import scan_files
+
+app = FastAPI(title="CLI File Processor API", version=settings.app_version)
+
+class FileInfo(BaseModel):
+    name: str
+    path: str
+    size: int
+    extension: str
+
+class ScanResult(BaseModel):
+    total: int
+    files: list[FileInfo]
+
+@app.get("/health")
+def health() -> HealthResponse:
+    return HealthResponse(status="ok", version=settings.app_version)
+
+@app.get("/scan", response_model=ScanResult)
+def scan(
+    extension: str = Query(default=settings.default_extension),
+    input_dir: str = Query(default=str(settings.default_input_dir)),
+    recursive: bool = Query(default=False),
+) -> ScanResult:
+    dir_path = Path(input_dir)
+    if not dir_path.exists():
+        raise HTTPException(status_code=404, detail=f"Папка не найдена: {input_dir}")
+    files = scan_files(input_dir=dir_path, extension=extension, recursive=recursive)
+    ...
+```
+
+**Ключевые концепции:**
+
+| Концепция | Что делает |
+|-----------|-----------|
+| `FastAPI()` | Создаёт приложение, генерирует `/docs` автоматически |
+| `BaseModel` (Pydantic) | Описывает структуру JSON-ответа, FastAPI сериализует автоматически |
+| `@app.get("/scan")` | Регистрирует GET-эндпоинт |
+| `Query(default=...)` | Параметр из URL: `/scan?extension=.pdf&recursive=true` |
+| `response_model=` | FastAPI проверяет что ответ соответствует схеме |
+| `HTTPException` | Возвращает HTTP-ошибку (404, 400) с JSON-телом |
+
+**Запуск:**
+
+```bash
+make api
+# или напрямую:
+uvicorn cli_file_processor.api:app --reload
+
+# Тестирование:
+curl http://localhost:8000/health
+curl "http://localhost:8000/scan?extension=.txt"
+curl "http://localhost:8000/scan?extension=.txt&recursive=true"
+# Автодокументация:
+# http://localhost:8000/docs
+```
+
+**Тестирование FastAPI — TestClient:**
+
+FastAPI предоставляет `TestClient` (на основе `httpx`) — тесты выглядят как обычные HTTP-запросы, но без реального сервера:
+
+```python
+from fastapi.testclient import TestClient
+from cli_file_processor.api import app
+
+client = TestClient(app)
+
+def test_health_returns_ok() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+
+def test_scan_nonexistent_dir_returns_404() -> None:
+    response = client.get("/scan?input_dir=/nonexistent")
+    assert response.status_code == 404
+```
+
+**Итог:** бизнес-логика в `scanner.py` осталась без изменений — CLI и API просто два разных способа вызвать те же функции.
+
+---
+
 ## Зависимости
 
 | Библиотека | Назначение | Тип |
@@ -2550,11 +2644,14 @@ pip install pydantic-settings
 | `python-dotenv` | Чтение `.env` файлов | основная |
 | `rich` | Цвета, таблицы, прогресс-бар в терминале | основная |
 | `pydantic-settings` | Типизированная конфигурация из `.env` | основная |
+| `fastapi` | REST API фреймворк | основная |
+| `uvicorn` | ASGI-сервер для запуска FastAPI | основная |
 | `pytest` | Запуск и организация тестов | dev |
 | `pytest-cov` | Измерение покрытия кода тестами | dev |
 | `mypy` | Статическая проверка типов | dev |
 | `ruff` | Линтер + форматтер кода | dev |
 | `pre-commit` | Автозапуск проверок перед git commit | dev |
+| `httpx` | HTTP-клиент для TestClient в тестах FastAPI | dev |
 
 **Внешние инструменты (устанавливаются отдельно, не через pip):**
 
