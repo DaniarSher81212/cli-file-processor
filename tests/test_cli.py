@@ -23,6 +23,7 @@ runner = CliRunner()
 # Тесты команды check
 # ─────────────────────────────────────────────
 
+
 def test_check_command_succeeds():
     # runner.invoke(app, ["аргументы"]) — запускает CLI команду.
     # Возвращает объект result с полями:
@@ -44,6 +45,7 @@ def test_check_command_output():
 # ─────────────────────────────────────────────
 # Тесты команды scan
 # ─────────────────────────────────────────────
+
 
 def test_scan_finds_files(tmp_path: Path):
     # Создаём тестовые файлы во временной папке
@@ -101,7 +103,9 @@ def test_scan_no_files_found(tmp_path: Path):
 def test_scan_verbose_shows_debug_logs(tmp_path: Path):
     (tmp_path / "file.txt").touch()
 
-    result = runner.invoke(app, ["scan", "--input-dir", str(tmp_path), "--extension", ".txt", "--verbose"])
+    result = runner.invoke(
+        app, ["scan", "--input-dir", str(tmp_path), "--extension", ".txt", "--verbose"]
+    )
 
     assert result.exit_code == 0
     # В verbose режиме должны быть строки DEBUG в выводе
@@ -132,6 +136,7 @@ def test_scan_normalizes_extension(tmp_path: Path):
 # Тесты команды process
 # ─────────────────────────────────────────────
 
+
 def test_process_copies_files(tmp_path: Path):
     input_dir = tmp_path / "input"
     input_dir.mkdir()
@@ -139,12 +144,18 @@ def test_process_copies_files(tmp_path: Path):
 
     (input_dir / "file.txt").write_text("содержимое")
 
-    result = runner.invoke(app, [
-        "process",
-        "--input-dir", str(input_dir),
-        "--output-dir", str(output_dir),
-        "--extension", ".txt",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--extension",
+            ".txt",
+        ],
+    )
 
     assert result.exit_code == 0
     # Файл должен появиться в output_dir
@@ -159,24 +170,36 @@ def test_process_reports_count(tmp_path: Path):
     (input_dir / "a.txt").write_text("")
     (input_dir / "b.txt").write_text("")
 
-    result = runner.invoke(app, [
-        "process",
-        "--input-dir", str(input_dir),
-        "--output-dir", str(output_dir),
-        "--extension", ".txt",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--extension",
+            ".txt",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "2" in result.output
 
 
 def test_process_fails_when_input_missing(tmp_path: Path):
-    result = runner.invoke(app, [
-        "process",
-        "--input-dir", str(tmp_path / "nonexistent"),
-        "--output-dir", str(tmp_path / "output"),
-        "--extension", ".txt",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(tmp_path / "nonexistent"),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--extension",
+            ".txt",
+        ],
+    )
 
     assert result.exit_code != 0
     assert "не найдена" in result.output
@@ -188,12 +211,18 @@ def test_process_warns_when_no_files(tmp_path: Path):
     output_dir = tmp_path / "output"
 
     # Папка есть, но файлов нужного расширения нет
-    result = runner.invoke(app, [
-        "process",
-        "--input-dir", str(input_dir),
-        "--output-dir", str(output_dir),
-        "--extension", ".txt",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--extension",
+            ".txt",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "не найдены" in result.output
@@ -207,12 +236,18 @@ def test_process_creates_output_dir(tmp_path: Path):
 
     (input_dir / "file.txt").write_text("")
 
-    result = runner.invoke(app, [
-        "process",
-        "--input-dir", str(input_dir),
-        "--output-dir", str(output_dir),
-        "--extension", ".txt",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--extension",
+            ".txt",
+        ],
+    )
 
     assert result.exit_code == 0
     assert output_dir.exists()
@@ -222,6 +257,7 @@ def test_process_creates_output_dir(tmp_path: Path):
 # Тесты флага --dry-run
 # ─────────────────────────────────────────────
 
+
 def test_dry_run_does_not_copy_files(tmp_path: Path):
     # Главное свойство dry-run: файлы НЕ должны копироваться
     input_dir = tmp_path / "input"
@@ -230,13 +266,19 @@ def test_dry_run_does_not_copy_files(tmp_path: Path):
 
     (input_dir / "file.txt").write_text("содержимое")
 
-    runner.invoke(app, [
-        "process",
-        "--input-dir", str(input_dir),
-        "--output-dir", str(output_dir),
-        "--extension", ".txt",
-        "--dry-run",
-    ])
+    runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--extension",
+            ".txt",
+            "--dry-run",
+        ],
+    )
 
     # output_dir не должна быть создана — копирования не было
     assert not output_dir.exists()
@@ -250,13 +292,19 @@ def test_dry_run_shows_filenames(tmp_path: Path):
 
     (input_dir / "report.txt").write_text("")
 
-    result = runner.invoke(app, [
-        "process",
-        "--input-dir", str(input_dir),
-        "--output-dir", str(output_dir),
-        "--extension", ".txt",
-        "--dry-run",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--extension",
+            ".txt",
+            "--dry-run",
+        ],
+    )
 
     assert result.exit_code == 0
     assert "report.txt" in result.output
@@ -270,13 +318,19 @@ def test_dry_run_shows_destination(tmp_path: Path):
 
     (input_dir / "file.txt").write_text("")
 
-    result = runner.invoke(app, [
-        "process",
-        "--input-dir", str(input_dir),
-        "--output-dir", str(output_dir),
-        "--extension", ".txt",
-        "--dry-run",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--extension",
+            ".txt",
+            "--dry-run",
+        ],
+    )
 
     assert result.exit_code == 0
     # Путь назначения должен быть в выводе
@@ -289,12 +343,18 @@ def test_dry_run_exits_successfully(tmp_path: Path):
     input_dir.mkdir()
     (input_dir / "file.txt").write_text("")
 
-    result = runner.invoke(app, [
-        "process",
-        "--input-dir", str(input_dir),
-        "--output-dir", str(tmp_path / "output"),
-        "--extension", ".txt",
-        "--dry-run",
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "process",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(tmp_path / "output"),
+            "--extension",
+            ".txt",
+            "--dry-run",
+        ],
+    )
 
     assert result.exit_code == 0
