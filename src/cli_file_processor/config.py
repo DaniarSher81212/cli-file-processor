@@ -1,46 +1,71 @@
 """
 Конфигурация приложения.
 
-Читает настройки из переменных окружения / .env файла.
-Всё приложение должно брать настройки отсюда, а не хардкодить значения.
+Использует Pydantic Settings: читает переменные из .env,
+валидирует типы и предоставляет единый объект настроек.
 """
 
-# Path — современный способ работы с путями файловой системы в Python.
-# Вместо строки "/home/user/data" используем объект Path со своими методами.
-# os — стандартная библиотека. os.getenv() читает переменные окружения.
-import os
 from pathlib import Path
 
-# load_dotenv — функция из библиотеки python-dotenv.
-# Она читает файл .env и кладёт переменные в os.environ.
-from dotenv import load_dotenv
-
-# load_dotenv() вызывается прямо при импорте модуля.
-# Алгоритм: ищет .env в текущей папке → читает строки KEY=VALUE → кладёт в os.environ.
-# Если .env нет — просто ничего не делает (не падает с ошибкой).
-load_dotenv()
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-# -> Path — аннотация возвращаемого типа. Говорит: "функция всегда возвращает Path".
-# Python не проверяет это на ходу, но IDE и Pyright используют для подсказок.
+class Settings(BaseSettings):
+    """
+    Все настройки приложения в одном месте.
+
+    Pydantic автоматически:
+    - читает переменные из .env (через model_config)
+    - конвертирует строки в нужные типы (str → Path)
+    - валидирует значения через field_validator
+    """
+
+    # Каждое поле = одна настройка.
+    # Тип поля (Path, str) — Pydantic приведёт к нему значение из .env.
+    # Значение после = — дефолт если переменная не задана.
+    default_input_dir: Path = Path("data/input")
+    default_extension: str = ".txt"
+    default_output_dir: Path = Path("data/output")
+    app_version: str = "0.1.0"
+
+    # model_config — настройки самого класса Settings.
+    # env_file=".env" — читать переменные из этого файла.
+    # env_file_encoding="utf-8" — кодировка файла.
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
+    # field_validator — валидатор конкретного поля.
+    # Запускается после чтения значения, до сохранения в объект.
+    @field_validator("default_extension")
+    @classmethod
+    def extension_must_start_with_dot(cls, value: str) -> str:
+        """Расширение должно начинаться с точки."""
+        if not value.startswith("."):
+            return f".{value}"
+        return value
+
+
+# Единственный экземпляр настроек — создаётся один раз при импорте.
+# Все модули импортируют этот объект, а не создают свой.
+settings = Settings()
+
+
+# Функции-обёртки сохраняем для обратной совместимости с cli.py.
+# Они делегируют к объекту settings.
 def get_default_input_dir() -> Path:
-    # os.getenv("КЛЮЧ", "запасное_значение"):
-    #   - ищет переменную DEFAULT_INPUT_DIR в os.environ (туда load_dotenv положил данные из .env)
-    #   - если нашёл — возвращает её значение (строку)
-    #   - если не нашёл — возвращает "data/input" (второй аргумент)
-    # Path(...) — оборачиваем строку в объект Path, чтобы дальше вызывать .exists(), .is_dir() и т.д.
-    return Path(os.getenv("DEFAULT_INPUT_DIR", "data/input"))
+    return settings.default_input_dir
 
 
 def get_default_extension() -> str:
-    # Аналогично: читаем DEFAULT_EXTENSION из .env, по умолчанию ".txt".
-    # Здесь Path не нужен — расширение остаётся строкой.
-    return os.getenv("DEFAULT_EXTENSION", ".txt")
+    return settings.default_extension
 
 
 def get_default_output_dir() -> Path:
-    return Path(os.getenv("DEFAULT_OUTPUT_DIR", "data/output"))
+    return settings.default_output_dir
 
 
 def get_app_version() -> str:
-    return "0.1.0"
+    return settings.app_version
