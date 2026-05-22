@@ -152,11 +152,9 @@ def test_scan_normalizes_extension(tmp_path: Path):
 # ─────────────────────────────────────────────
 
 
-def test_process_copies_files(tmp_path: Path):
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-
+def test_process_copies_files(input_dir: Path, output_dir: Path):
+    # input_dir и output_dir — fixtures из conftest.py.
+    # Обе живут в одном tmp_path, pytest создаёт их свежими для каждого теста.
     (input_dir / "file.txt").write_text("содержимое")
 
     result = runner.invoke(
@@ -173,15 +171,10 @@ def test_process_copies_files(tmp_path: Path):
     )
 
     assert result.exit_code == 0
-    # Файл должен появиться в output_dir
     assert (output_dir / "file.txt").exists()
 
 
-def test_process_reports_count(tmp_path: Path):
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-
+def test_process_reports_count(input_dir: Path, output_dir: Path):
     (input_dir / "a.txt").write_text("")
     (input_dir / "b.txt").write_text("")
 
@@ -220,12 +213,7 @@ def test_process_fails_when_input_missing(tmp_path: Path):
     assert "не найдена" in result.output
 
 
-def test_process_warns_when_no_files(tmp_path: Path):
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-
-    # Папка есть, но файлов нужного расширения нет
+def test_process_warns_when_no_files(input_dir: Path, output_dir: Path):
     result = runner.invoke(
         app,
         [
@@ -273,12 +261,7 @@ def test_process_creates_output_dir(tmp_path: Path):
 # ─────────────────────────────────────────────
 
 
-def test_dry_run_does_not_copy_files(tmp_path: Path):
-    # Главное свойство dry-run: файлы НЕ должны копироваться
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-
+def test_dry_run_does_not_copy_files(input_dir: Path, output_dir: Path):
     (input_dir / "file.txt").write_text("содержимое")
 
     runner.invoke(
@@ -295,16 +278,10 @@ def test_dry_run_does_not_copy_files(tmp_path: Path):
         ],
     )
 
-    # output_dir не должна быть создана — копирования не было
     assert not output_dir.exists()
 
 
-def test_dry_run_shows_filenames(tmp_path: Path):
-    # dry-run должен показать имена файлов которые БЫЛИ БЫ скопированы
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-
+def test_dry_run_shows_filenames(input_dir: Path, output_dir: Path):
     (input_dir / "report.txt").write_text("")
 
     result = runner.invoke(
@@ -325,12 +302,7 @@ def test_dry_run_shows_filenames(tmp_path: Path):
     assert "report.txt" in result.output
 
 
-def test_dry_run_shows_destination(tmp_path: Path):
-    # dry-run должен показать куда файлы БЫЛИ БЫ скопированы
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
-    output_dir = tmp_path / "output"
-
+def test_dry_run_shows_destination(input_dir: Path, output_dir: Path):
     (input_dir / "file.txt").write_text("")
 
     result = runner.invoke(
@@ -348,7 +320,6 @@ def test_dry_run_shows_destination(tmp_path: Path):
     )
 
     assert result.exit_code == 0
-    # Путь назначения должен быть в выводе
     assert str(output_dir) in result.output
 
 
@@ -438,10 +409,7 @@ def test_scan_shows_kb_size(tmp_path: Path):
 # ─────────────────────────────────────────────
 
 
-def test_dry_run_exits_successfully(tmp_path: Path):
-    # dry-run — это не ошибка, exit code должен быть 0
-    input_dir = tmp_path / "input"
-    input_dir.mkdir()
+def test_dry_run_exits_successfully(input_dir: Path, output_dir: Path):
     (input_dir / "file.txt").write_text("")
 
     result = runner.invoke(
@@ -451,7 +419,7 @@ def test_dry_run_exits_successfully(tmp_path: Path):
             "--input-dir",
             str(input_dir),
             "--output-dir",
-            str(tmp_path / "output"),
+            str(output_dir),
             "--extension",
             ".txt",
             "--dry-run",

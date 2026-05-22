@@ -7,40 +7,31 @@
 # tmp_path — встроенная pytest fixture, тип Path нужен для аннотации.
 from pathlib import Path
 
+import pytest
+
 from cli_file_processor.core.scanner import normalize_extension, scan_files
 
 # ─────────────────────────────────────────────
 # Тесты для normalize_extension
 # ─────────────────────────────────────────────
 
-# Каждая тестовая функция начинается с test_ — pytest находит их автоматически.
-# Имя описывает сценарий: test_<что_проверяем>_<при_каком_условии>
 
-
-def test_normalize_extension_adds_dot():
-    # Проверяем: "txt" без точки → ".txt" с точкой
-    # assert — ключевое слово Python. Если выражение False — тест падает с ошибкой.
-    assert normalize_extension("txt") == ".txt"
-
-
-def test_normalize_extension_keeps_existing_dot():
-    # Если точка уже есть — не должна добавиться вторая
-    assert normalize_extension(".txt") == ".txt"
-
-
-def test_normalize_extension_lowercases():
-    # Верхний регистр должен стать нижним
-    assert normalize_extension("PDF") == ".pdf"
-
-
-def test_normalize_extension_strips_spaces():
-    # Пробелы по краям должны убираться
-    assert normalize_extension("  .TXT  ") == ".txt"
-
-
-def test_normalize_extension_combined():
-    # Всё сразу: без точки + верхний регистр + пробелы
-    assert normalize_extension("  PDF  ") == ".pdf"
+# @pytest.mark.parametrize запускает один тест несколько раз с разными данными.
+# Первый аргумент — имена параметров (строка через запятую).
+# Второй аргумент — список кортежей (raw, expected).
+# pytest создаст отдельный тест-кейс для каждой строки и покажет их по отдельности.
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("txt", ".txt"),  # без точки — добавляется
+        (".txt", ".txt"),  # точка есть — не дублируется
+        ("PDF", ".pdf"),  # верхний регистр → нижний
+        ("  .TXT  ", ".txt"),  # пробелы по краям убираются
+        ("  PDF  ", ".pdf"),  # всё вместе: пробелы + регистр + без точки
+    ],
+)
+def test_normalize_extension(raw: str, expected: str) -> None:
+    assert normalize_extension(raw) == expected
 
 
 # ─────────────────────────────────────────────
@@ -53,16 +44,11 @@ def test_normalize_extension_combined():
 # в тест когда видит аргумент с нужным именем.
 
 
-def test_scan_files_finds_txt_files(tmp_path: Path):
-    # Создаём тестовые файлы в временной папке
-    # tmp_path / "file.txt" — оператор / у Path создаёт вложенный путь
-    (tmp_path / "file1.txt").touch()  # .touch() создаёт пустой файл
-    (tmp_path / "file2.txt").touch()
-    (tmp_path / "report.pdf").touch()  # этот не должен попасть в результат
+def test_scan_files_finds_txt_files(sample_txt_dir: Path) -> None:
+    # sample_txt_dir — наша fixture из conftest.py: 2 .txt + 1 .pdf
+    # pytest передаёт её автоматически по имени аргумента
+    result = scan_files(input_dir=sample_txt_dir, extension=".txt")
 
-    result = scan_files(input_dir=tmp_path, extension=".txt")
-
-    # Должны найти ровно 2 файла
     assert len(result) == 2
 
 
