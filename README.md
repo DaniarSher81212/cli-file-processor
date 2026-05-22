@@ -31,6 +31,12 @@
    - [Тема 17 — Ветки: feature-branch workflow](#тема-17--ветки-feature-branch-workflow)
    - [Тема 18 — Pull Request](#тема-18--pull-request)
    - [Тема 19 — GitHub Actions CI](#тема-19--github-actions-ci)
+   - [Тема 20 — Жизненный цикл CLI-команды](#тема-20--жизненный-цикл-cli-команды)
+   - [Тема 21 — Exit codes](#тема-21--exit-codes)
+   - [Тема 22 — Аннотации типов (Type Hints)](#тема-22--аннотации-типов-type-hints)
+   - [Тема 23 — Merge conflicts](#тема-23--merge-conflicts)
+   - [Тема 24 — Conventional Commits](#тема-24--conventional-commits)
+   - [Тема 25 — Полный engineering lifecycle](#тема-25--полный-engineering-lifecycle)
 6. [Зависимости](#зависимости)
 
 ---
@@ -1447,6 +1453,412 @@ jobs:
 ```
 
 Запустит три параллельных job — один на каждую версию.
+
+---
+
+### Тема 20 — Жизненный цикл CLI-команды
+
+Что происходит под капотом когда ты пишешь в терминале:
+
+```bash
+cli-file-processor scan -i data/input -e .txt
+```
+
+**Полный путь от команды до результата:**
+
+```
+1. Shell получает строку "cli-file-processor scan -i data/input -e .txt"
+       ↓
+2. Shell ищет "cli-file-processor" в PATH
+   (~/.venv/bin/, /usr/local/bin/, и т.д.)
+       ↓
+3. Находит wrapper-скрипт, созданный pip при `pip install -e .`
+   Скрипт содержит: from cli_file_processor.cli import app; app()
+       ↓
+4. Python запускает интерпретатор, импортирует пакет
+       ↓
+5. Typer получает sys.argv = ["scan", "-i", "data/input", "-e", ".txt"]
+   Парсит аргументы: input_dir=Path("data/input"), extension=".txt"
+       ↓
+6. Typer вызывает функцию scan(input_dir=..., extension=..., ...)
+       ↓
+7. scan() вызывает setup_logging()      → logging_config.py
+8. scan() вызывает get_default_input_dir() → config.py (если нужно)
+9. scan() вызывает scan_files()         → core/scanner.py
+   scanner.py вызывает normalize_extension()
+   scanner.py вызывает Path.glob("*.txt")
+       ↓
+10. scan() вызывает print_scan_results() → output.py
+    output.py строит Rich Table
+    output.py вызывает console.print(table)
+       ↓
+11. Rich отрисовывает таблицу в stdout
+       ↓
+12. Процесс завершается с exit code 0
+```
+
+**Где создаётся wrapper-скрипт:**
+
+```toml
+# pyproject.toml
+[project.scripts]
+cli-file-processor = "cli_file_processor.cli:app"
+#  ↑                    ↑                    ↑
+#  имя команды          модуль               объект Typer
+```
+
+После `pip install -e .` pip создаёт файл `.venv/bin/cli-file-processor` —
+это Python-скрипт, который импортирует `app` и вызывает его.
+
+**Как убедиться:**
+
+```bash
+which cli-file-processor
+# /home/dan/dev/projects/python/cli_file_processor/.venv/bin/cli-file-processor
+
+cat $(which cli-file-processor)
+# #!/path/to/python
+# from cli_file_processor.cli import app
+# app()
+```
+
+---
+
+### Тема 21 — Exit codes
+
+**Exit code** — число, которое программа возвращает при завершении.
+Это язык общения между программами: `0` всегда означает успех, всё остальное — ошибку.
+
+**Стандартные значения:**
+
+| Код | Значение |
+|-----|----------|
+| `0` | Успех — всё прошло нормально |
+| `1` | Общая ошибка — что-то пошло не так |
+| `2` | Неверные аргументы — пользователь передал неправильные параметры |
+
+**Как проверить exit code в терминале:**
+
+```bash
+cli-file-processor scan -i data/input -e .txt
+echo $?   # → 0  (успех)
+
+cli-file-processor scan -i /nonexistent -e .txt
+echo $?   # → 1  (ошибка: папка не найдена)
+```
+
+**Как Typer возвращает ошибку:**
+
+```python
+# cli.py
+if not input_dir.exists():
+    print_error(f"папка не найдена: {input_dir}")
+    raise typer.Exit(code=1)   # ← завершает программу с кодом 1
+```
+
+`raise typer.Exit(code=1)` — не исключение в обычном смысле. Typer его перехватывает
+и завершает процесс с нужным кодом. Пользователь не видит traceback.
+
+**Почему exit code важен:**
+
+```bash
+# Скрипты используют exit code для принятия решений
+cli-file-processor scan -i data/input -e .txt && echo "Нашли файлы!"
+#                                               ↑
+#                  && выполняется ТОЛЬКО если exit code = 0
+
+# CI делает то же самое:
+pytest tests/ && ruff check src/
+# если pytest упал (exit code != 0) — ruff не запустится
+```
+
+**Как pytest использует exit code:**
+
+| Код | Значение |
+|-----|----------|
+| `0` | Все тесты прошли |
+| `1` | Некоторые тесты упали |
+| `2` | Прерван пользователем (Ctrl+C) |
+| `5` | Тестов не найдено |
+
+GitHub Actions проверяет exit code каждого шага. Если код не `0` — шаг упал,
+весь job помечается как FAILED.
+
+---
+
+### Тема 22 — Аннотации типов (Type Hints)
+
+**Type hints** — подсказки для IDE, линтеров и разработчиков о том, какого типа
+значения принимает и возвращает функция. Python их не проверяет во время выполнения,
+но они дают огромную пользу при разработке.
+
+**Базовый синтаксис:**
+
+```python
+# Аргумент: тип указывается после двоеточия
+# Возвращаемое значение: тип указывается после ->
+
+def normalize_extension(extension: str) -> str:
+    ...
+
+def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> list[Path]:
+    ...
+
+def setup_logging(verbose: bool = False) -> None:
+    ...
+```
+
+**Типы из этого проекта:**
+
+```python
+str           # строка: "txt", ".pdf"
+bool          # булево: True / False
+int           # целое число: 42
+Path          # объект pathlib.Path
+list[Path]    # список объектов Path
+Path | None   # либо Path, либо None (не передали аргумент)
+-> None       # функция ничего не возвращает
+-> str        # функция возвращает строку
+-> list[Path] # функция возвращает список Path
+```
+
+**`Path | None` — union type:**
+
+```python
+# До Python 3.10 писали так:
+from typing import Optional
+def scan(input_dir: Optional[Path]) -> None: ...
+
+# Python 3.10+ — современный синтаксис с |
+def scan(input_dir: Path | None) -> None: ...
+```
+
+**Зачем нужны type hints:**
+
+```python
+# Без type hints — IDE не знает что возвращает функция
+files = scan_files(...)
+files.  # IDE не предлагает методы ← нет подсказок
+
+# С type hints — IDE знает что files: list[Path]
+files = scan_files(...)
+files.  # IDE предлагает: .append(), .extend(), len()...
+# И для каждого элемента Path:
+files[0].  # → .name, .suffix, .exists(), .stat()...
+```
+
+**Ruff проверяет type hints** — правила группы `UP` предлагают современный синтаксис:
+
+```python
+# UP007 — устаревший Optional
+from typing import Optional
+def f(x: Optional[str]) -> None: ...
+
+# Ruff исправляет на современный:
+def f(x: str | None) -> None: ...
+```
+
+---
+
+### Тема 23 — Merge conflicts
+
+**Merge conflict** возникает когда два коммита изменили одну и ту же строку в одном
+файле. Git не знает какую версию оставить — просит человека решить.
+
+**Типичная ситуация:**
+
+```
+main:              def scan_files(input_dir, extension):
+feature/recursive: def scan_files(input_dir, extension, recursive=False):
+feature/sort:      def scan_files(input_dir, extension, sort=True):
+```
+
+Когда мержим `feature/sort` в `main` после `feature/recursive` — конфликт.
+
+**Как выглядит конфликт в файле:**
+
+```python
+<<<<<<< HEAD
+def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> list[Path]:
+=======
+def scan_files(input_dir: Path, extension: str, sort: bool = True) -> list[Path]:
+>>>>>>> feature/sort
+```
+
+```
+<<<<<<< HEAD      ← начало — текущее состояние ветки (куда мержим)
+=======           ← разделитель
+>>>>>>> feature/sort ← конец — входящие изменения (что мержим)
+```
+
+**Как разрешить:**
+
+1. Открыть файл с конфликтом
+2. Выбрать итоговый вариант (убрать маркеры `<<<<`, `====`, `>>>>`)
+3. Написать финальный код:
+
+```python
+# Объединили оба аргумента
+def scan_files(input_dir: Path, extension: str, recursive: bool = False, sort: bool = False) -> list[Path]:
+```
+
+4. Добавить и закоммитить:
+
+```bash
+git add src/cli_file_processor/core/scanner.py
+git commit -m "resolve merge conflict in scan_files signature"
+```
+
+**Команды для работы с конфликтами:**
+
+```bash
+git status                  # показывает файлы с конфликтами (both modified)
+git diff                    # показывает все конфликты
+git merge --abort           # отменить merge, вернуться к состоянию до
+git log --merge             # коммиты которые вызвали конфликт
+```
+
+**Как избегать конфликтов:**
+
+```bash
+# Перед началом работы — обновить main
+git switch main
+git pull
+git switch -c feature/my-feature
+
+# Регулярно подтягивать изменения из main во время работы
+git fetch origin
+git rebase origin/main   # перебазировать ветку поверх актуального main
+```
+
+---
+
+### Тема 24 — Conventional Commits
+
+**Conventional Commits** — стандарт оформления сообщений коммитов.
+Делает историю git читаемой и позволяет автоматически генерировать changelog.
+
+**Формат:**
+
+```
+<тип>(<область>): <описание>
+
+тип     — что это за изменение (feat, fix, docs, ...)
+область — какая часть кода затронута (опционально)
+описание — кратко что сделано, глагол в настоящем времени
+```
+
+**Типы:**
+
+| Тип | Назначение | Пример |
+|-----|-----------|--------|
+| `feat` | Новая функциональность | `feat: add --recursive flag` |
+| `fix` | Исправление бага | `fix: handle missing input directory` |
+| `docs` | Только документация | `docs: update README with GitHub topics` |
+| `refactor` | Рефакторинг без изменения поведения | `refactor: extract normalize_extension` |
+| `test` | Добавление или правка тестов | `test: add recursive scan tests` |
+| `ci` | Изменения CI/CD | `ci: add GitHub Actions workflow` |
+| `chore` | Служебное (зависимости, конфиг) | `chore: add ruff and pre-commit` |
+| `style` | Форматирование, без логики | `style: apply ruff format to tests/` |
+
+**Примеры из этого проекта в стиле Conventional Commits:**
+
+```bash
+# Было (наш стиль):
+git commit -m "add --recursive flag to scan command"
+git commit -m "add GitHub Actions CI workflow"
+git commit -m "apply ruff format to tests/"
+
+# В стиле Conventional Commits:
+git commit -m "feat(scan): add --recursive flag for subdirectory search"
+git commit -m "ci: add GitHub Actions workflow with ruff and pytest"
+git commit -m "style: apply ruff format to tests/"
+```
+
+**Почему это полезно:**
+
+```bash
+# По истории сразу видно структуру изменений:
+git log --oneline
+# feat(scan): add --recursive flag
+# feat(process): add --dry-run flag
+# ci: add GitHub Actions workflow
+# chore: add ruff and pre-commit
+# fix: handle empty directory in scan
+# docs: update README with all topics
+```
+
+Инструменты вроде `semantic-release` умеют по типам коммитов автоматически
+определять версию (feat → minor, fix → patch) и генерировать CHANGELOG.md.
+
+---
+
+### Тема 25 — Полный engineering lifecycle
+
+Всё что мы изучили — это не набор отдельных инструментов, а единый цикл разработки.
+Вот как он выглядит в этом проекте:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   РАЗРАБОТКА                                │
+│                                                             │
+│  Пишешь код в IDE                                          │
+│       ↓                                                     │
+│  pytest tests/ -v          ← убеждаешься что ничего не сломал│
+│       ↓                                                     │
+│  ruff check src/           ← линтер проверяет стиль        │
+│  ruff format src/          ← форматтер приводит к единому виду│
+└─────────────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   КОММИТ                                    │
+│                                                             │
+│  git add <files>                                            │
+│  git commit -m "feat: ..."                                  │
+│       ↓                                                     │
+│  pre-commit hook срабатывает автоматически:                 │
+│    → ruff check --fix                                       │
+│    → ruff format                                            │
+│  Если нашёл — исправил файлы, коммит отменён               │
+│  git add → git commit — снова                               │
+└─────────────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   PUSH И PR                                 │
+│                                                             │
+│  git push origin feature/my-feature                        │
+│       ↓                                                     │
+│  gh pr create --title "..." --base main                    │
+│       ↓                                                     │
+│  GitHub Actions CI запускается автоматически:               │
+│    → ruff check src/ tests/                                 │
+│    → ruff format --check src/ tests/                        │
+│    → pytest tests/ -v                                       │
+│  ✓ Passed — PR можно мержить                               │
+│  ✗ Failed — видишь логи, правишь, пушишь снова             │
+└─────────────────────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   MERGE                                     │
+│                                                             │
+│  gh pr merge 1 --merge --delete-branch                     │
+│       ↓                                                     │
+│  Код попадает в main                                        │
+│  Ветка удаляется                                           │
+│  CI запускается ещё раз на main — финальная проверка       │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Каждый слой защиты ловит свой класс проблем:**
+
+| Слой | Когда | Что ловит |
+|------|-------|-----------|
+| IDE (подсветка) | Во время написания | Синтаксические ошибки |
+| pytest | Локально, до коммита | Сломанная логика |
+| pre-commit | При `git commit` | Стиль, форматирование |
+| GitHub Actions | При push/PR | Всё вместе на чистой машине |
+
+Чем раньше поймал — тем дешевле исправить.
 
 ---
 
