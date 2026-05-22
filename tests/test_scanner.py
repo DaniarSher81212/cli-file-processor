@@ -16,6 +16,7 @@ from cli_file_processor.core.scanner import normalize_extension, scan_files
 # Каждая тестовая функция начинается с test_ — pytest находит их автоматически.
 # Имя описывает сценарий: test_<что_проверяем>_<при_каком_условии>
 
+
 def test_normalize_extension_adds_dot():
     # Проверяем: "txt" без точки → ".txt" с точкой
     # assert — ключевое слово Python. Если выражение False — тест падает с ошибкой.
@@ -51,10 +52,11 @@ def test_normalize_extension_combined():
 # Fixture — это вспомогательный объект, который pytest автоматически передаёт
 # в тест когда видит аргумент с нужным именем.
 
+
 def test_scan_files_finds_txt_files(tmp_path: Path):
     # Создаём тестовые файлы в временной папке
     # tmp_path / "file.txt" — оператор / у Path создаёт вложенный путь
-    (tmp_path / "file1.txt").touch()   # .touch() создаёт пустой файл
+    (tmp_path / "file1.txt").touch()  # .touch() создаёт пустой файл
     (tmp_path / "file2.txt").touch()
     (tmp_path / "report.pdf").touch()  # этот не должен попасть в результат
 
