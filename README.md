@@ -44,6 +44,7 @@
    - [Тема 30 — Pydantic Settings: типизированная конфигурация](#тема-30--pydantic-settings-типизированная-конфигурация)
    - [Тема 31 — FastAPI: REST-интерфейс поверх бизнес-логики](#тема-31--fastapi-rest-интерфейс-поверх-бизнес-логики)
    - [Тема 32 — conftest.py: общие fixtures и parametrize](#тема-32--conftestpy-общие-fixtures-и-parametrize)
+   - [Тема 33 — Rich Progress Bar: прогресс-бар для долгих операций](#тема-33--rich-progress-bar-прогресс-бар-для-долгих-операций)
 6. [Зависимости](#зависимости)
 
 ---
@@ -2731,6 +2732,60 @@ Pytest показывает каждый кейс отдельно:
 test_normalize_extension[txt-.txt] PASSED
 test_normalize_extension[PDF-.pdf] PASSED
 ```
+
+---
+
+### Тема 33 — Rich Progress Bar: прогресс-бар для долгих операций
+
+**Файл:** `src/cli_file_processor/output.py` → `process_files_with_progress()`
+
+**Два уровня API в Rich:**
+
+```python
+# Простой способ — track(): одна строка, нет контроля
+from rich.progress import track
+
+for file in track(files, description="Копирование..."):
+    process(file)
+
+# Продвинутый — Progress: полный контроль над колонками и обновлениями
+from rich.progress import Progress, SpinnerColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn, TextColumn
+```
+
+**Что реализовали:**
+
+```python
+with Progress(
+    SpinnerColumn(),                                        # ⠋ ⠙ ⠹ ⠸ — анимация
+    TextColumn("[progress.description]{task.description}"), # имя файла
+    BarColumn(),                                            # ████████░░
+    TaskProgressColumn(),                                   # 3/10
+    TimeElapsedColumn(),                                    # 0:00:02
+) as progress:
+    task = progress.add_task("Копирование...", total=len(files))
+
+    for file_path in files:
+        progress.update(task, description=f"[cyan]{file_path.name}[/cyan]")
+        process_files([file_path], output_dir)
+        progress.advance(task)  # +1 к счётчику, прогресс-бар двигается
+```
+
+**Как это выглядит:**
+```
+⠸ report.pdf   ████████░░░░░░░  3/10  0:00:01
+```
+
+**Ключевые концепции:**
+
+| Что | Зачем |
+|-----|-------|
+| `with Progress(...) as progress` | Контекстный менеджер — при выходе очищает строку прогресса |
+| `add_task(total=N)` | Регистрирует задачу, возвращает ID для дальнейших вызовов |
+| `progress.update(task, description=...)` | Меняет текст задачи на лету — показываем текущий файл |
+| `progress.advance(task)` | Увеличивает счётчик на 1 — полоса продвигается |
+| `[cyan]{task.description}[/cyan]` | Rich markup внутри TextColumn — цвет без `console.print` |
+
+**Почему не в `processor.py`:** копирование файлов — бизнес-логика. Прогресс-бар — способ *показать* эту логику. Разные уровни ответственности → код вывода остаётся в `output.py`, `processor.py` не знает о Rich.
 
 ---
 
