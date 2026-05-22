@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from cli_file_processor.core.scanner import normalize_extension, scan_files
+from cli_file_processor.exceptions import InputDirNotFoundError, InputNotADirectoryError
 
 # ─────────────────────────────────────────────
 # Тесты для normalize_extension
@@ -124,3 +125,26 @@ def test_scan_files_non_recursive_excludes_subdirs(tmp_path: Path):
 
     assert len(result) == 1
     assert result[0].name == "root.txt"
+
+
+# ─────────────────────────────────────────────
+# Тесты для кастомных исключений
+# ─────────────────────────────────────────────
+
+
+def test_scan_files_raises_when_dir_not_found(tmp_path: Path) -> None:
+    # pytest.raises() — контекстный менеджер: тест упадёт если исключение НЕ было брошено.
+    with pytest.raises(InputDirNotFoundError) as exc_info:
+        scan_files(input_dir=tmp_path / "nonexistent", extension=".txt")
+    # exc_info.value — сам объект исключения. Проверяем атрибут и сообщение.
+    assert exc_info.value.path == tmp_path / "nonexistent"
+    assert "не найдена" in str(exc_info.value)
+
+
+def test_scan_files_raises_when_not_a_directory(tmp_path: Path) -> None:
+    some_file = tmp_path / "iam_a_file.txt"
+    some_file.touch()
+    with pytest.raises(InputNotADirectoryError) as exc_info:
+        scan_files(input_dir=some_file, extension=".txt")
+    assert exc_info.value.path == some_file
+    assert "не папка" in str(exc_info.value)

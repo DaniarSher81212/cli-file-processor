@@ -8,6 +8,8 @@
 import logging
 from pathlib import Path
 
+from cli_file_processor.exceptions import InputDirNotFoundError, InputNotADirectoryError
+
 logger = logging.getLogger(__name__)
 
 
@@ -42,6 +44,11 @@ def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> list
     Возвращает:
         Список объектов Path — найденные файлы. Пустой список если ничего не нашли.
     """
+    if not input_dir.exists():
+        raise InputDirNotFoundError(input_dir)
+    if not input_dir.is_dir():
+        raise InputNotADirectoryError(input_dir)
+
     logger.debug("начинаем поиск в папке: %s (recursive=%s)", input_dir, recursive)
 
     normalized_extension = normalize_extension(extension)

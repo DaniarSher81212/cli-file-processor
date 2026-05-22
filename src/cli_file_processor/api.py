@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from cli_file_processor.config import settings
 from cli_file_processor.core.scanner import scan_files
+from cli_file_processor.exceptions import InputDirNotFoundError, InputNotADirectoryError
 
 # FastAPI() — создаём объект приложения.
 # title и description появятся в автодокументации (/docs).
@@ -81,17 +82,14 @@ def scan(
     """
     dir_path = Path(input_dir)
 
-    # HTTPException — стандартный способ вернуть ошибку в FastAPI.
-    # status_code=404 → HTTP 404 Not Found.
-    # detail — текст ошибки в JSON-ответе.
-    if not dir_path.exists():
-        raise HTTPException(status_code=404, detail=f"Папка не найдена: {input_dir}")
-
-    if not dir_path.is_dir():
-        raise HTTPException(status_code=400, detail=f"Это не папка: {input_dir}")
-
-    # Та же бизнес-логика что и в CLI — без изменений.
-    files = scan_files(input_dir=dir_path, extension=extension, recursive=recursive)
+    # API ловит конкретные типы исключений и маппит каждый в свой HTTP-код.
+    # CLI делает то же самое, но реагирует иначе: печатает текст и выходит с кодом 1.
+    try:
+        files = scan_files(input_dir=dir_path, extension=extension, recursive=recursive)
+    except InputDirNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except InputNotADirectoryError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     file_infos = [
         FileInfo(

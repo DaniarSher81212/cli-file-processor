@@ -20,6 +20,7 @@ from cli_file_processor.config import (
 
 # Импортируем бизнес-логику поиска файлов из core/scanner.py
 from cli_file_processor.core.scanner import scan_files
+from cli_file_processor.exceptions import ProcessorError
 
 # Импортируем функцию настройки логирования
 from cli_file_processor.logging_config import setup_logging
@@ -97,16 +98,13 @@ def scan(
     if extension is None:
         extension = get_default_extension()
 
-    if not input_dir.exists():
-        print_error(f"папка не найдена: {input_dir}")
+    # scanner.py сам проверяет директорию и бросает ProcessorError если что-то не так.
+    # CLI ловит базовый класс — любая ошибка бизнес-логики обрабатывается одинаково.
+    try:
+        files = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
+    except ProcessorError as e:
+        print_error(str(e))
         raise typer.Exit(code=1)
-
-    if not input_dir.is_dir():
-        print_error(f"это не папка: {input_dir}")
-        raise typer.Exit(code=1)
-
-    # Передаём recursive в scanner — он выберет glob или rglob
-    files = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
 
     if not files:
         print_warning(f"файлы с расширением {extension} не найдены.")
@@ -169,15 +167,11 @@ def process(
     if extension is None:
         extension = get_default_extension()
 
-    if not input_dir.exists():
-        print_error(f"папка не найдена: {input_dir}")
+    try:
+        files = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
+    except ProcessorError as e:
+        print_error(str(e))
         raise typer.Exit(code=1)
-
-    if not input_dir.is_dir():
-        print_error(f"это не папка: {input_dir}")
-        raise typer.Exit(code=1)
-
-    files = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
 
     if not files:
         print_warning(f"файлы с расширением {extension} не найдены.")
