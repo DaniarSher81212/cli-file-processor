@@ -11,9 +11,16 @@ from pathlib import Path
 # Он умеет: цвета, таблицы, прогресс-бары, форматирование.
 from rich.console import Console
 
-# track() — оборачивает любой итерируемый объект и показывает прогресс-бар.
-# Использование: for item in track(items, description="..."):
-from rich.progress import track
+# Progress — полноценный прогресс-бар с настраиваемыми колонками.
+# track() — упрощённая обёртка над Progress для простых случаев (одна строка).
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 
 # Table — объект для построения таблиц с рамками и колонками.
 from rich.table import Table
@@ -106,13 +113,26 @@ def process_files_with_progress(files: list[Path], output_dir: Path) -> list[Pat
 
     processed: list[Path] = []
 
-    # track(iterable, description=) — оборачивает список и рисует прогресс-бар.
-    # На каждой итерации цикл получает очередной элемент, как обычный for.
-    # Rich сам считает прогресс и обновляет полосу заполнения.
-    for file_path in track(files, description="Копирование файлов..."):
-        # Копируем по одному файлу за раз — передаём список из одного элемента.
-        result = process_files([file_path], output_dir)
-        processed.extend(result)  # extend() добавляет все элементы списка в processed
+    # Progress — контекстный менеджер (with). При выходе очищает строку прогресса.
+    # Каждый аргумент — колонка, они выводятся слева направо.
+    with Progress(
+        SpinnerColumn(),  # анимированный спиннер: ⠋ ⠙ ⠹ ⠸ ...
+        TextColumn("[progress.description]{task.description}"),  # текст задачи
+        BarColumn(),  # полоса заполнения: ████████░░
+        TaskProgressColumn(),  # "3/10"
+        TimeElapsedColumn(),  # "0:00:02"
+    ) as progress:
+        # add_task() регистрирует задачу и возвращает её ID.
+        # total= — сколько шагов всего (нужно для вычисления процента).
+        task = progress.add_task("Копирование...", total=len(files))
+
+        for file_path in files:
+            # update() меняет description на лету — показываем текущий файл.
+            progress.update(task, description=f"[cyan]{file_path.name}[/cyan]")
+            result = process_files([file_path], output_dir)
+            processed.extend(result)
+            # advance() увеличивает счётчик на 1 — прогресс-бар продвигается.
+            progress.advance(task)
 
     return processed
 
