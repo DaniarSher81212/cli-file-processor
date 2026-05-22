@@ -40,6 +40,7 @@
    - [Тема 26 — Coverage: покрытие кода тестами](#тема-26--coverage-покрытие-кода-тестами)
    - [Тема 27 — Mypy: статическая проверка типов](#тема-27--mypy-статическая-проверка-типов)
    - [Тема 28 — Docker: контейнеризация](#тема-28--docker-контейнеризация)
+   - [Тема 29 — Makefile: стандартные команды проекта](#тема-29--makefile-стандартные-команды-проекта)
 6. [Зависимости](#зависимости)
 
 ---
@@ -2238,6 +2239,157 @@ docker images cli-file-processor
 
 `python:3.12-slim` (~50MB) + зависимости (typer, rich, dotenv) + код = ~210MB.
 Для сравнения, `python:3.12` (полный образ) дал бы ~1.2GB.
+
+---
+
+### Тема 29 — Makefile: стандартные команды проекта
+
+**Файл:** `Makefile`
+
+**Проблема которую решает:**
+
+```bash
+# Без Makefile — нужно помнить и печатать:
+python -m ruff check src/ tests/
+python -m mypy src/ --strict
+pytest tests/ -v --cov=src/cli_file_processor --cov-report=term-missing
+docker build -t cli-file-processor .
+
+# С Makefile — просто:
+make lint
+make type-check
+make test
+make build
+```
+
+Makefile — стандарт в профессиональных проектах. Новый разработчик клонирует
+репозиторий, запускает `make help` — и сразу видит все доступные команды.
+
+**Синтаксис:**
+
+```makefile
+# Переменная
+PYTHON := .venv/bin/python
+
+# Цель: зависимости
+# [TAB] команда
+test: lint
+	$(PYTHON) -m pytest tests/ -v
+```
+
+Важно: отступ перед командой — это **Tab**, не пробелы. Make требует именно Tab.
+
+**Полный Makefile проекта:**
+
+```makefile
+PYTHON := .venv/bin/python
+
+.PHONY: install lint format type-check test check build clean help
+
+help:
+	@echo "Доступные команды:"
+	@echo "  make install     — установить проект и dev-зависимости"
+	@echo "  make lint        — проверить стиль кода (ruff)"
+	@echo "  make format      — отформатировать код (ruff format)"
+	@echo "  make type-check  — проверить типы (mypy --strict)"
+	@echo "  make test        — запустить тесты с покрытием"
+	@echo "  make check       — lint + type-check + test"
+	@echo "  make build       — собрать Docker-образ"
+	@echo "  make clean       — удалить временные файлы"
+
+install:
+	pip install -e ".[dev]"
+	pre-commit install
+
+lint:
+	$(PYTHON) -m ruff check src/ tests/
+
+format:
+	$(PYTHON) -m ruff format src/ tests/
+
+type-check:
+	$(PYTHON) -m mypy src/ --strict
+
+test:
+	$(PYTHON) -m pytest tests/ -v
+
+check: lint type-check test
+
+build:
+	docker build -t cli-file-processor .
+
+clean:
+	rm -rf .coverage htmlcov/ .mypy_cache/ .pytest_cache/
+	find . -type d -name __pycache__ -exec rm -rf {} +
+```
+
+**Ключевые концепции:**
+
+**`.PHONY`** — объявляет цели командами, а не файлами:
+
+```makefile
+.PHONY: test
+
+test:
+	pytest tests/
+```
+
+Без `.PHONY` если в папке существует файл с именем `test` — make решит
+что цель уже выполнена и ничего не запустит.
+
+**Переменная `PYTHON`** — не зависит от активации venv:
+
+```makefile
+PYTHON := .venv/bin/python
+
+# Вместо:
+pytest tests/          ← использует системный Python
+# Используем:
+$(PYTHON) -m pytest    ← использует Python из виртуального окружения
+```
+
+**Зависимости между целями:**
+
+```makefile
+# check зависит от lint, type-check и test
+# Они запустятся по порядку перед командами самого check
+check: lint type-check test
+```
+
+Если `lint` упал — `type-check` и `test` не запустятся. Это защита:
+бессмысленно проверять типы если код не прошёл линтер.
+
+**`@` перед командой** — скрывает саму команду, показывает только вывод:
+
+```makefile
+help:
+	@echo "make test — запустить тесты"  # выводит: make test — запустить тесты
+	echo "make test — запустить тесты"   # выводит: echo "..." и потом сам текст
+```
+
+**Первая цель = цель по умолчанию:**
+
+```bash
+make        # → запускает help (первая цель в файле)
+make test   # → запускает test
+make check  # → lint + type-check + test
+```
+
+**Типичный рабочий процесс с Makefile:**
+
+```bash
+# После клонирования репозитория — один раз
+make install
+
+# Во время разработки — перед каждым коммитом
+make check
+
+# Отдельные команды по необходимости
+make format      # отформатировать код
+make test        # только тесты (быстро)
+make build       # собрать Docker-образ
+make clean       # почистить временные файлы
+```
 
 ---
 
