@@ -37,6 +37,7 @@
    - [Тема 23 — Merge conflicts](#тема-23--merge-conflicts)
    - [Тема 24 — Conventional Commits](#тема-24--conventional-commits)
    - [Тема 25 — Полный engineering lifecycle](#тема-25--полный-engineering-lifecycle)
+   - [Тема 26 — Coverage: покрытие кода тестами](#тема-26--coverage-покрытие-кода-тестами)
 6. [Зависимости](#зависимости)
 
 ---
@@ -1862,6 +1863,115 @@ git log --oneline
 
 ---
 
+### Тема 26 — Coverage: покрытие кода тестами
+
+**Файлы:** `pyproject.toml`, `tests/test_config.py`, обновлённые тесты
+
+**Coverage** показывает какой процент строк кода выполнялся во время тестов.
+Тесты могут проходить, но часть кода при этом не проверяется — coverage
+показывает точно где дыры.
+
+**Установка:**
+
+```bash
+pip install pytest-cov
+```
+
+**Запуск:**
+
+```bash
+# Базовый отчёт в терминале
+pytest tests/ --cov=src/cli_file_processor
+
+# С указанием непокрытых строк (самый полезный режим)
+pytest tests/ --cov=src/cli_file_processor --cov-report=term-missing
+
+# HTML-отчёт — открывается в браузере, подсвечивает строки
+pytest tests/ --cov=src/cli_file_processor --cov-report=html
+open htmlcov/index.html
+```
+
+**Как читать отчёт:**
+
+```
+Name                                       Stmts   Miss  Cover   Missing
+------------------------------------------------------------------------
+src/cli_file_processor/cli.py                 54      5    91%   96, 98, 166, 168, 170
+src/cli_file_processor/config.py              12      0   100%
+src/cli_file_processor/core/scanner.py        17      0   100%
+src/cli_file_processor/output.py              48      1    98%   40
+------------------------------------------------------------------------
+TOTAL                                        151      6    96%
+```
+
+```
+Stmts   — сколько строк кода в файле (statements)
+Miss    — сколько строк не выполнялось ни разу
+Cover   — процент покрытия: (Stmts - Miss) / Stmts * 100
+Missing — конкретные номера непокрытых строк
+```
+
+**Настройка в `pyproject.toml`:**
+
+```toml
+[tool.pytest.ini_options]
+# addopts — аргументы которые pytest добавляет при каждом запуске автоматически.
+# Теперь простой "pytest tests/" уже включает coverage.
+addopts = "--cov=src/cli_file_processor --cov-report=term-missing --cov-fail-under=90"
+
+[tool.coverage.run]
+omit = [
+    "src/cli_file_processor/main.py",  # if __name__ == "__main__" — не тестируется
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__ == .__main__.",  # стандартная точка входа
+]
+```
+
+**`--cov-fail-under=90`** — pytest завершается с exit code 1 если покрытие ниже 90%.
+Это значит CI упадёт, защищая `main` от непокрытого кода.
+
+```bash
+pytest tests/
+# ...
+# FAIL Required test coverage of 90% not reached. Total coverage: 87%
+# exit code: 1  ← CI видит это и помечает шаг как FAILED
+```
+
+**Coverage в GitHub Actions CI:**
+
+```yaml
+- name: Run tests
+  run: pytest tests/ -v --cov=src/cli_file_processor --cov-report=term-missing --cov-fail-under=90
+```
+
+Теперь при каждом PR GitHub проверяет не только что тесты проходят,
+но и что покрытие не упало ниже порога.
+
+**Осознанные пробелы — что не покрываем и почему:**
+
+| Строки | Что там | Почему не покрываем |
+|--------|---------|---------------------|
+| `cli.py:96,98,166-170` | Ветки "нет аргумента → берём дефолт из `.env`" | Требует мокать файловую систему — усложняет тесты непропорционально пользе |
+| `output.py:40` | Форматирование размера в MB (> 1 МБ) | Создавать мегабайтный файл в тестах — излишество |
+
+Это не баги — это осознанное решение. 96% при разумных тестах лучше,
+чем 100% при искусственных.
+
+**Что нового написали:**
+
+```
+tests/test_config.py   ← новый файл: 8 тестов для config.py
+tests/test_cli.py      ← добавлены тесты: version, --recursive, KB-размер, process-с-файлом
+tests/test_scanner.py  ← добавлены тесты: recursive=True, recursive=False
+```
+
+**Итог:** 36 тестов → 53 теста, покрытие 87% → **96%**.
+
+---
+
 ## Зависимости
 
 | Библиотека | Назначение | Тип |
@@ -1870,6 +1980,7 @@ git log --oneline
 | `python-dotenv` | Чтение `.env` файлов | основная |
 | `rich` | Цвета, таблицы, прогресс-бар в терминале | основная |
 | `pytest` | Запуск и организация тестов | dev |
+| `pytest-cov` | Измерение покрытия кода тестами | dev |
 | `ruff` | Линтер + форматтер кода | dev |
 | `pre-commit` | Автозапуск проверок перед git commit | dev |
 
