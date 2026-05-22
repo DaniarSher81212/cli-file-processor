@@ -41,6 +41,7 @@
    - [Тема 27 — Mypy: статическая проверка типов](#тема-27--mypy-статическая-проверка-типов)
    - [Тема 28 — Docker: контейнеризация](#тема-28--docker-контейнеризация)
    - [Тема 29 — Makefile: стандартные команды проекта](#тема-29--makefile-стандартные-команды-проекта)
+   - [Тема 30 — Pydantic Settings: типизированная конфигурация](#тема-30--pydantic-settings-типизированная-конфигурация)
 6. [Зависимости](#зависимости)
 
 ---
@@ -2393,6 +2394,154 @@ make clean       # почистить временные файлы
 
 ---
 
+### Тема 30 — Pydantic Settings: типизированная конфигурация
+
+**Файл:** `src/cli_file_processor/config.py`
+
+**Что было до — `os.getenv` подход:**
+
+```python
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def get_default_input_dir() -> Path:
+    return Path(os.getenv("DEFAULT_INPUT_DIR", "data/input"))
+
+def get_default_extension() -> str:
+    return os.getenv("DEFAULT_EXTENSION", ".txt")
+
+def get_default_output_dir() -> Path:
+    return Path(os.getenv("DEFAULT_OUTPUT_DIR", "data/output"))
+```
+
+Проблемы: четыре отдельные функции, нет валидации, тип приходится приводить вручную (`Path(...)`), нет единого места где видны все настройки.
+
+**Что стало — Pydantic Settings:**
+
+```python
+from pathlib import Path
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    default_input_dir: Path = Path("data/input")
+    default_extension: str = ".txt"
+    default_output_dir: Path = Path("data/output")
+    app_version: str = "0.1.0"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+    )
+
+    @field_validator("default_extension")
+    @classmethod
+    def extension_must_start_with_dot(cls, value: str) -> str:
+        if not value.startswith("."):
+            return f".{value}"
+        return value
+
+settings = Settings()
+```
+
+**Как Pydantic Settings читает конфигурацию — приоритет:**
+
+```
+1. Переменные окружения (наивысший)  export DEFAULT_INPUT_DIR=/data
+2. Переменные из .env файла          DEFAULT_INPUT_DIR=data/input
+3. Значения по умолчанию в классе    default_input_dir: Path = Path("data/input")
+```
+
+**Автоматическое приведение типов:**
+
+```python
+# В .env написано:
+DEFAULT_INPUT_DIR=data/reports
+
+# Pydantic читает строку "data/reports" и сам конвертирует в Path:
+settings.default_input_dir   # → Path("data/reports"), уже Path — не str
+```
+
+Не нужно писать `Path(os.getenv(...))` — Pydantic делает это сам.
+
+**`field_validator` — валидация при старте:**
+
+```python
+@field_validator("default_extension")
+@classmethod
+def extension_must_start_with_dot(cls, value: str) -> str:
+    if not value.startswith("."):
+        return f".{value}"
+    return value
+```
+
+Если в `.env` написано `DEFAULT_EXTENSION=txt` (без точки) — валидатор
+автоматически исправит на `.txt`. Это происходит один раз при запуске программы,
+до любой обработки файлов.
+
+**`model_config = SettingsConfigDict(...)`** — настройки самого класса:
+
+```python
+model_config = SettingsConfigDict(
+    env_file=".env",              # читать переменные из этого файла
+    env_file_encoding="utf-8",    # кодировка файла
+)
+```
+
+**Единственный экземпляр — `settings = Settings()`:**
+
+```python
+# config.py — создаётся один раз при первом импорте модуля
+settings = Settings()
+
+# cli.py, scanner.py, любой другой модуль — импортирует готовый объект
+from cli_file_processor.config import settings
+print(settings.default_input_dir)  # Path("data/input")
+```
+
+Python кешируют импортированные модули — `settings` создаётся ровно один раз
+за всё время работы программы.
+
+**Функции-обёртки для обратной совместимости:**
+
+```python
+# Сохранили старый интерфейс — cli.py не трогали
+def get_default_input_dir() -> Path:
+    return settings.default_input_dir
+
+def get_default_extension() -> str:
+    return settings.default_extension
+```
+
+Это паттерн **обратной совместимости**: внутренняя реализация изменилась,
+внешний интерфейс остался прежним. Все вызывающие код модули продолжают работать.
+
+**Что поймали по дороге — pre-commit и изолированное окружение:**
+
+Mypy в pre-commit работает в собственном изолированном окружении.
+Он не видит пакеты из `.venv` — нужно явно перечислить зависимости:
+
+```yaml
+# .pre-commit-config.yaml
+- id: mypy
+  additional_dependencies: [typer, rich, pydantic-settings]  # ← добавили
+  args: [--strict]
+```
+
+Без этого mypy в pre-commit падал с `Cannot find implementation for module "pydantic"`,
+хотя локально (`make type-check`) всё проходило.
+
+**Установка:**
+
+```bash
+pip install pydantic-settings
+```
+
+---
+
 ## Зависимости
 
 | Библиотека | Назначение | Тип |
@@ -2400,6 +2549,7 @@ make clean       # почистить временные файлы
 | `typer` | Создание CLI команд, парсинг аргументов | основная |
 | `python-dotenv` | Чтение `.env` файлов | основная |
 | `rich` | Цвета, таблицы, прогресс-бар в терминале | основная |
+| `pydantic-settings` | Типизированная конфигурация из `.env` | основная |
 | `pytest` | Запуск и организация тестов | dev |
 | `pytest-cov` | Измерение покрытия кода тестами | dev |
 | `mypy` | Статическая проверка типов | dev |
