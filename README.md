@@ -45,6 +45,7 @@
    - [Тема 31 — FastAPI: REST-интерфейс поверх бизнес-логики](#тема-31--fastapi-rest-интерфейс-поверх-бизнес-логики)
    - [Тема 32 — conftest.py: общие fixtures и parametrize](#тема-32--conftestpy-общие-fixtures-и-parametrize)
    - [Тема 33 — Rich Progress Bar: прогресс-бар для долгих операций](#тема-33--rich-progress-bar-прогресс-бар-для-долгих-операций)
+   - [Тема 34 — Кастомные исключения: иерархия ошибок проекта](#тема-34--кастомные-исключения-иерархия-ошибок-проекта)
 6. [Зависимости](#зависимости)
 
 ---
@@ -2786,6 +2787,83 @@ with Progress(
 | `[cyan]{task.description}[/cyan]` | Rich markup внутри TextColumn — цвет без `console.print` |
 
 **Почему не в `processor.py`:** копирование файлов — бизнес-логика. Прогресс-бар — способ *показать* эту логику. Разные уровни ответственности → код вывода остаётся в `output.py`, `processor.py` не знает о Rich.
+
+---
+
+### Тема 34 — Кастомные исключения: иерархия ошибок проекта
+
+**Файл:** `src/cli_file_processor/exceptions.py`
+
+**Проблема до:** одинаковые проверки в двух местах — `cli.py` и `api.py`. При добавлении нового интерфейса нужно копировать ещё раз.
+
+```python
+# Было — дублируется в cli.py И в api.py:
+if not input_dir.exists():
+    ...  # cli: print_error + Exit(1), api: HTTPException(404)
+if not input_dir.is_dir():
+    ...  # cli: print_error + Exit(1), api: HTTPException(400)
+```
+
+**Решение — исключения как иерархия:**
+
+```python
+class ProcessorError(Exception):
+    """Базовый класс — ловить все ошибки приложения сразу."""
+
+class InputDirNotFoundError(ProcessorError):
+    def __init__(self, path: Path) -> None:
+        self.path = path                          # атрибут — для программного доступа
+        super().__init__(f"папка не найдена: {path}")  # str(e) вернёт это
+
+class InputNotADirectoryError(ProcessorError):
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        super().__init__(f"это не папка: {path}")
+```
+
+**Валидация переехала в `scanner.py` — один раз, одно место:**
+
+```python
+def scan_files(input_dir: Path, ...) -> list[Path]:
+    if not input_dir.exists():
+        raise InputDirNotFoundError(input_dir)   # бросаем — не печатаем
+    if not input_dir.is_dir():
+        raise InputNotADirectoryError(input_dir)
+    ...
+```
+
+**CLI ловит базовый класс** — обрабатывает любую ошибку одинаково:
+
+```python
+try:
+    files = scan_files(...)
+except ProcessorError as e:
+    print_error(str(e))          # str(e) → "папка не найдена: /path"
+    raise typer.Exit(code=1)
+```
+
+**API ловит конкретные подтипы** — каждый маппится в свой HTTP-код:
+
+```python
+try:
+    files = scan_files(...)
+except InputDirNotFoundError as e:
+    raise HTTPException(status_code=404, detail=str(e))
+except InputNotADirectoryError as e:
+    raise HTTPException(status_code=400, detail=str(e))
+```
+
+**Тест проверяет тип, атрибут и текст:**
+
+```python
+def test_scan_raises_when_dir_not_found(tmp_path: Path) -> None:
+    with pytest.raises(InputDirNotFoundError) as exc_info:
+        scan_files(input_dir=tmp_path / "nonexistent", extension=".txt")
+    assert exc_info.value.path == tmp_path / "nonexistent"  # атрибут
+    assert "не найдена" in str(exc_info.value)              # текст сообщения
+```
+
+**Итог:** бизнес-логика бросает исключения, не зная кто их поймает. CLI и API реагируют по-своему на одно и то же исключение — разделение ответственности.
 
 ---
 
