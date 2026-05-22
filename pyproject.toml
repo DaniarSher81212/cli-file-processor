@@ -15,6 +15,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "ruff>=0.4.0",
+    "pre-commit>=3.7.0",
 ]
 
 [project.scripts]
@@ -51,3 +52,8 @@ ignore = ["E501"]
 [tool.ruff.lint.isort]
 # Ruff знает что код лежит в src/ — правильно сортирует импорты
 known-first-party = ["cli_file_processor"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false

@@ -52,46 +52,36 @@ def print_warning(message: str) -> None:
     console.print(f"[yellow]Предупреждение:[/yellow] {message}")
 
 
-def print_scan_results(files: list[Path]) -> None:
+def print_scan_results(files: list[Path], base_dir: Path | None = None) -> None:
     """
     Выводит результаты сканирования в виде таблицы.
 
     Аргументы:
-        files — список найденных файлов (объекты Path)
+        files    — список найденных файлов (объекты Path)
+        base_dir — если передана, показывает путь относительно этой папки.
+                   Нужно для режима --recursive: видно в какой подпапке файл.
     """
-    # Table() — создаём объект таблицы.
-    # show_header=True — показывать строку с названиями колонок.
-    # header_style — стиль заголовков колонок.
     table = Table(show_header=True, header_style="bold cyan")
-
-    # .add_column() — добавляем колонку.
-    # Первый аргумент — название колонки (заголовок).
-    # style — стиль текста в этой колонке.
-    # no_wrap — не переносить длинный текст на новую строку.
-    table.add_column("Файл", style="white", no_wrap=True)
+    table.add_column("Файл", style="white")
     table.add_column("Расширение", style="dim")
     table.add_column("Размер", justify="right", style="green")
 
-    # Заполняем таблицу строками — по одной на каждый файл.
     for file_path in files:
-        # .stat() — возвращает информацию о файле с диска.
-        # .st_size — размер файла в байтах.
         size = file_path.stat().st_size
 
-        # .add_row() — добавляем строку. Аргументы соответствуют колонкам по порядку.
-        # .name — только имя файла без папок: "data/input/file.txt" → "file.txt"
-        # .suffix — расширение файла: "file.txt" → ".txt"
-        table.add_row(
-            file_path.name,
-            file_path.suffix,
-            _format_size(size),
-        )
+        if base_dir is not None:
+            # .relative_to(base_dir) — путь относительно base_dir.
+            # Пример: Path("data/input/reports/file.txt").relative_to(Path("data/input"))
+            #       → Path("reports/file.txt")
+            # Так пользователь видит в какой подпапке находится файл.
+            display_name = str(file_path.relative_to(base_dir))
+        else:
+            # Обычный режим — только имя файла
+            display_name = file_path.name
 
-    # Выводим таблицу в терминал
+        table.add_row(display_name, file_path.suffix, _format_size(size))
+
     console.print(table)
-
-    # Итоговая строка — количество файлов.
-    # [bold] ... [/bold] — жирный текст. Числа выделяем цветом.
     console.print(f"Найдено: [bold]{len(files)}[/bold] файл(ов)")
 
 
@@ -122,7 +112,7 @@ def process_files_with_progress(files: list[Path], output_dir: Path) -> list[Pat
     for file_path in track(files, description="Копирование файлов..."):
         # Копируем по одному файлу за раз — передаём список из одного элемента.
         result = process_files([file_path], output_dir)
-        processed.extend(result)   # extend() добавляет все элементы списка в processed
+        processed.extend(result)  # extend() добавляет все элементы списка в processed
 
     return processed
 
@@ -142,7 +132,9 @@ def print_dry_run_results(files: list[Path], output_dir: Path) -> None:
     Показывает что БЫЛО БЫ сделано без реального копирования.
     """
     # Жёлтый заголовок — сигнал что это не реальное действие
-    console.print("\n[bold yellow]Предпросмотр (--dry-run) — файлы НЕ будут скопированы[/bold yellow]\n")
+    console.print(
+        "\n[bold yellow]Предпросмотр (--dry-run) — файлы НЕ будут скопированы[/bold yellow]\n"
+    )
 
     # Таблица: что → куда
     table = Table(show_header=True, header_style="bold cyan")

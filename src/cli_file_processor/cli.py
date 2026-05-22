@@ -36,9 +36,7 @@ from cli_file_processor.output import (
 
 # typer.Typer() — создаём объект приложения. Это "контейнер" для всех команд.
 # help= — текст, который появляется при запуске: cli-file-processor --help
-app = typer.Typer(
-    help="CLI File Processor — инструмент для обработки файлов."
-)
+app = typer.Typer(help="CLI File Processor — инструмент для обработки файлов.")
 
 
 # @app.command() — декоратор. Говорит Typer: "зарегистрируй функцию check как команду CLI".
@@ -82,23 +80,23 @@ def scan(
         "-v",
         help="Показать подробный вывод (DEBUG-логи).",
     ),
+    recursive: bool = typer.Option(
+        False,
+        "--recursive",
+        "-r",
+        help="Искать файлы во всех вложенных подпапках.",
+    ),
 ) -> None:
     """
     Ищет файлы с указанным расширением во входной папке.
     """
-
-    # Настраиваем логирование в самом начале команды, до любой работы.
-    # verbose=True → уровень DEBUG (подробно), verbose=False → уровень INFO (кратко).
     setup_logging(verbose=verbose)
 
-    # Если пользователь не передал флаг — берём значение из config.py (.env).
-    # Приоритет: флаг в терминале → значение в .env → запасное значение в config.py
     if input_dir is None:
         input_dir = get_default_input_dir()
     if extension is None:
         extension = get_default_extension()
 
-    # Валидация — проверяем входные данные ДО начала работы.
     if not input_dir.exists():
         print_error(f"папка не найдена: {input_dir}")
         raise typer.Exit(code=1)
@@ -107,16 +105,16 @@ def scan(
         print_error(f"это не папка: {input_dir}")
         raise typer.Exit(code=1)
 
-    # Вызываем бизнес-логику — функцию из scanner.py.
-    files = scan_files(input_dir=input_dir, extension=extension)
+    # Передаём recursive в scanner — он выберет glob или rglob
+    files = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
 
     if not files:
-        # print_warning — жёлтое предупреждение, не ошибка
         print_warning(f"файлы с расширением {extension} не найдены.")
         return
 
-    # Передаём результат в output.py — пусть он решает как это выглядит.
-    print_scan_results(files)
+    # В режиме --recursive передаём input_dir чтобы таблица показывала
+    # относительные пути: "reports/monthly.txt" вместо просто "monthly.txt"
+    print_scan_results(files, base_dir=input_dir if recursive else None)
 
 
 @app.command()
@@ -152,13 +150,18 @@ def process(
         "--dry-run",
         help="Показать что будет скопировано без реального копирования.",
     ),
+    recursive: bool = typer.Option(
+        False,
+        "--recursive",
+        "-r",
+        help="Искать файлы во всех вложенных подпапках.",
+    ),
 ) -> None:
     """
     Находит файлы с указанным расширением и копирует их в папку назначения.
     """
     setup_logging(verbose=verbose)
 
-    # Подставляем дефолты из config.py если флаги не переданы
     if input_dir is None:
         input_dir = get_default_input_dir()
     if output_dir is None:
@@ -166,7 +169,6 @@ def process(
     if extension is None:
         extension = get_default_extension()
 
-    # Валидация входной папки — она должна существовать
     if not input_dir.exists():
         print_error(f"папка не найдена: {input_dir}")
         raise typer.Exit(code=1)
@@ -175,17 +177,14 @@ def process(
         print_error(f"это не папка: {input_dir}")
         raise typer.Exit(code=1)
 
-    # Находим файлы — одинаково и в обычном режиме, и в dry-run
-    files = scan_files(input_dir=input_dir, extension=extension)
+    files = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
 
     if not files:
         print_warning(f"файлы с расширением {extension} не найдены.")
         return
 
     if dry_run:
-        # Только показываем что было бы сделано — файлы не трогаем
         print_dry_run_results(files, output_dir)
     else:
-        # Копируем с прогресс-баром и выводим итог
         processed = process_files_with_progress(files, output_dir)
         print_process_results(processed, output_dir)
