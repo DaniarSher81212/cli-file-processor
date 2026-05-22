@@ -39,6 +39,7 @@
    - [Тема 25 — Полный engineering lifecycle](#тема-25--полный-engineering-lifecycle)
    - [Тема 26 — Coverage: покрытие кода тестами](#тема-26--coverage-покрытие-кода-тестами)
    - [Тема 27 — Mypy: статическая проверка типов](#тема-27--mypy-статическая-проверка-типов)
+   - [Тема 28 — Docker: контейнеризация](#тема-28--docker-контейнеризация)
 6. [Зависимости](#зависимости)
 
 ---
@@ -2095,6 +2096,148 @@ pre-commit:
     ↓ (всё прошло)
 коммит создан ✓
 ```
+
+---
+
+### Тема 28 — Docker: контейнеризация
+
+**Файлы:** `Dockerfile`, `.dockerignore`
+
+**Проблема которую решает Docker:**
+
+```
+Без Docker:
+  твоя машина  → Python 3.12, venv, зависимости → работает
+  сервер        → Python 3.10, нет venv           → не работает
+  коллега       → другая ОС, другие версии        → "у меня не запускается"
+
+С Docker:
+  любая машина  → docker run cli-file-processor   → работает одинаково
+```
+
+**Три ключевых понятия:**
+
+```
+Dockerfile  — инструкция как собрать образ (текстовый рецепт)
+Image       — собранный образ: snapshot окружения + кода (результат рецепта)
+Container   — запущенный образ: живой изолированный процесс
+```
+
+**Dockerfile проекта:**
+
+```dockerfile
+# Базовый образ — официальный Python 3.12 на минимальном Debian.
+# slim весит ~50MB против ~900MB у полного образа.
+FROM python:3.12-slim
+
+# Рабочая папка внутри контейнера.
+# Все следующие команды выполняются относительно неё.
+WORKDIR /app
+
+# Копируем pyproject.toml и src/ отдельно от остального кода.
+# Docker кеширует каждый слой — если изменился только README,
+# слой с pip install не пересобирается.
+COPY pyproject.toml .
+COPY src/ ./src/
+
+# Устанавливаем пакет и зависимости.
+# --no-cache-dir — не хранить кеш pip внутри образа, экономит место.
+RUN pip install --no-cache-dir .
+
+# Создаём папки для данных.
+RUN mkdir -p data/input data/output
+
+# ENTRYPOINT — фиксированная команда при старте контейнера.
+# docker run <image> scan → cli-file-processor scan
+ENTRYPOINT ["cli-file-processor"]
+
+# CMD — аргументы по умолчанию если не передано ничего.
+# docker run <image>      → cli-file-processor --help
+CMD ["--help"]
+```
+
+**Почему порядок COPY важен — кеширование слоёв:**
+
+```
+COPY pyproject.toml .    ← слой 1: пересобирается если pyproject.toml изменился
+COPY src/ ./src/         ← слой 2: пересобирается если код изменился
+RUN pip install .        ← слой 3: кешируется если слои 1-2 не менялись
+```
+
+Если ты поменял только логику в `scanner.py` — Docker пересобирает только
+слои 2 и 3. Слой 1 берётся из кеша. Это ускоряет сборку.
+
+**`.dockerignore` — что не копируем в образ:**
+
+```
+.venv/          ← виртуальное окружение — в образе своё Python
+.git/           ← история git не нужна в production
+tests/          ← тесты не нужны в итоговом образе
+.env            ← секреты — передаются через переменные окружения
+data/output/    ← результаты работы — создаются при запуске
+```
+
+Без `.dockerignore` контекст сборки был бы в разы больше и образ содержал бы лишнее.
+
+**Основные команды:**
+
+```bash
+# Собрать образ с тегом (именем)
+docker build -t cli-file-processor .
+
+# Запустить с аргументами по умолчанию (--help)
+docker run --rm cli-file-processor
+
+# Запустить команду
+docker run --rm cli-file-processor version
+docker run --rm cli-file-processor check
+
+# Список собранных образов
+docker images
+
+# Список запущенных контейнеров
+docker ps
+
+# Удалить образ
+docker rmi cli-file-processor
+```
+
+**`--rm`** — удалить контейнер после завершения. Без него остановленные
+контейнеры накапливаются: `docker ps -a` показывает их все.
+
+**Volume — пробросить папку с хоста в контейнер:**
+
+```bash
+# Синтаксис: -v <путь_на_хосте>:<путь_в_контейнере>
+docker run --rm \
+  -v $(pwd)/data/input:/app/data/input \
+  -v $(pwd)/data/output:/app/data/output \
+  cli-file-processor scan --input-dir data/input --extension .txt
+```
+
+Без volume контейнер изолирован — не видит файлы на твоей машине.
+С volume — папка `data/input` с хоста монтируется внутрь как `/app/data/input`.
+
+**ENTRYPOINT vs CMD:**
+
+```dockerfile
+ENTRYPOINT ["cli-file-processor"]   # фиксировано — нельзя переопределить при запуске
+CMD ["--help"]                       # по умолчанию — заменяется аргументами
+
+# docker run cli-file-processor           → cli-file-processor --help  (CMD используется)
+# docker run cli-file-processor scan ...  → cli-file-processor scan ... (CMD игнорируется)
+```
+
+**Размер образа:**
+
+```bash
+docker images cli-file-processor
+# REPOSITORY           TAG      IMAGE ID       SIZE
+# cli-file-processor   latest   e9a58b7bdbbb   210MB
+```
+
+`python:3.12-slim` (~50MB) + зависимости (typer, rich, dotenv) + код = ~210MB.
+Для сравнения, `python:3.12` (полный образ) дал бы ~1.2GB.
 
 ---
 
