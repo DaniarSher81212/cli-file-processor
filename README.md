@@ -38,6 +38,7 @@
    - [Тема 24 — Conventional Commits](#тема-24--conventional-commits)
    - [Тема 25 — Полный engineering lifecycle](#тема-25--полный-engineering-lifecycle)
    - [Тема 26 — Coverage: покрытие кода тестами](#тема-26--coverage-покрытие-кода-тестами)
+   - [Тема 27 — Mypy: статическая проверка типов](#тема-27--mypy-статическая-проверка-типов)
 6. [Зависимости](#зависимости)
 
 ---
@@ -1972,6 +1973,131 @@ tests/test_scanner.py  ← добавлены тесты: recursive=True, recurs
 
 ---
 
+### Тема 27 — Mypy: статическая проверка типов
+
+**Файлы:** `pyproject.toml`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml`
+
+**Mypy** проверяет type hints до запуска программы. Ruff проверяет стиль,
+pytest проверяет поведение — mypy проверяет **типы**.
+
+**Три слоя проверок в проекте:**
+
+```
+ruff   → стиль и логика: неиспользуемые импорты, порядок, форматирование
+mypy   → типы: правильно ли передаются аргументы, что возвращают функции
+pytest → поведение: правильно ли работает программа во время выполнения
+```
+
+**Что mypy ловит:**
+
+```python
+def scan_files(input_dir: Path, extension: str) -> list[Path]:
+    ...
+
+# Mypy поймает до запуска:
+scan_files(input_dir="data/input", extension=".txt")
+# error: Argument "input_dir" has incompatible type "str"; expected "Path"
+
+files = scan_files(Path("data/input"), ".txt")
+files.upper()   # list не имеет метода upper()
+# error: "list[Path]" has no attribute "upper"
+```
+
+Python эти ошибки не заметит — они проявятся только во время выполнения.
+Mypy находит их статически, без запуска кода.
+
+**Установка:**
+
+```bash
+pip install mypy
+```
+
+**Запуск:**
+
+```bash
+# Обычная проверка
+python -m mypy src/
+
+# Строгий режим — максимальная проверка
+python -m mypy src/ --strict
+```
+
+**Конфигурация в `pyproject.toml`:**
+
+```toml
+[tool.mypy]
+python_version = "3.12"   # версия Python для проверки синтаксиса
+strict = true             # включает все строгие проверки
+pretty = true             # читаемый вывод с указателями на строки
+```
+
+**Что включает `strict = true`:**
+
+| Флаг | Что проверяет |
+|------|--------------|
+| `--disallow-untyped-defs` | Все функции должны иметь аннотации |
+| `--disallow-any-generics` | Нельзя писать `list` без параметра — только `list[str]` |
+| `--warn-return-any` | Нельзя молча возвращать `Any` |
+| `--warn-unused-ignores` | Нельзя игнорировать ошибки которых нет |
+| `--check-untyped-defs` | Проверяет тело функций без аннотаций |
+
+**Pre-commit хук:**
+
+```yaml
+# .pre-commit-config.yaml
+- repo: https://github.com/pre-commit/mirrors-mypy
+  rev: v1.16.0
+  hooks:
+    - id: mypy
+      additional_dependencies: [typer, rich]   # нужны для проверки импортов
+      args: [--strict]
+```
+
+`additional_dependencies` — mypy в pre-commit окружении изолирован, нужно явно
+указать сторонние библиотеки чтобы он мог проверять их типы.
+
+**GitHub Actions CI:**
+
+```yaml
+- name: Mypy type check
+  run: python -m mypy src/ --strict
+```
+
+**Почему наш код прошёл строгий режим:**
+
+Потому что type hints писались правильно с самого начала:
+
+```python
+# Все функции аннотированы
+def normalize_extension(extension: str) -> str: ...
+def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> list[Path]: ...
+def print_scan_results(files: list[Path], base_dir: Path | None = None) -> None: ...
+
+# Используется современный синтаксис (Python 3.10+)
+Path | None      # не Optional[Path]
+list[Path]       # не List[Path] из typing
+
+# Нет неаннотированных функций, нет Any
+```
+
+Если бы type hints отсутствовали или были написаны небрежно — mypy нашёл бы
+десятки ошибок.
+
+**Полная цепочка проверок при коммите:**
+
+```
+git commit
+    ↓
+pre-commit:
+  ruff check --fix    ← стиль и логика
+  ruff format         ← форматирование
+  mypy --strict       ← типы
+    ↓ (всё прошло)
+коммит создан ✓
+```
+
+---
+
 ## Зависимости
 
 | Библиотека | Назначение | Тип |
@@ -1981,6 +2107,7 @@ tests/test_scanner.py  ← добавлены тесты: recursive=True, recurs
 | `rich` | Цвета, таблицы, прогресс-бар в терминале | основная |
 | `pytest` | Запуск и организация тестов | dev |
 | `pytest-cov` | Измерение покрытия кода тестами | dev |
+| `mypy` | Статическая проверка типов | dev |
 | `ruff` | Линтер + форматтер кода | dev |
 | `pre-commit` | Автозапуск проверок перед git commit | dev |
 
