@@ -10,5 +10,5 @@ repos:
     rev: v1.16.0
     hooks:
       - id: mypy
-        additional_dependencies: [typer, rich, pydantic-settings]
+        additional_dependencies: [typer, rich, pydantic-settings, fastapi, httpx]
         args: [--strict]

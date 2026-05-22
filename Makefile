@@ -4,7 +4,7 @@ PYTHON := .venv/bin/python
 
 # .PHONY говорит make: эти цели — не файлы, а команды.
 # Без этого make проверял бы: "есть ли файл с именем test?" и не запускал бы цель.
-.PHONY: install lint format type-check test build clean help
+.PHONY: install lint format type-check test api build clean help
 
 # Первая цель — запускается по умолчанию при вызове просто make.
 help:
@@ -15,6 +15,8 @@ help:
 	@echo "  make type-check   — проверить типы (mypy --strict)"
 	@echo "  make test         — запустить тесты с покрытием"
 	@echo "  make check        — lint + type-check + test (полная проверка)"
+	@echo "  make build        — собрать Docker-образ"
+	@echo "  make api          — запустить FastAPI сервер (uvicorn --reload)"
 	@echo "  make build        — собрать Docker-образ"
 	@echo "  make clean        — удалить временные файлы"
 
@@ -37,6 +39,9 @@ test:
 # check запускает lint, type-check и test последовательно.
 # Если одна цель упала — следующие не запустятся (поведение make по умолчанию).
 check: lint type-check test
+
+api:
+	$(PYTHON) -m uvicorn cli_file_processor.api:app --reload
 
 build:
 	docker build -t cli-file-processor .

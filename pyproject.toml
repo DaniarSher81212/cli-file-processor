@@ -8,6 +8,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "rich>=13.0.0",
     "pydantic-settings>=2.0.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
 ]
 
 # Зависимости только для разработки — не нужны обычному пользователю инструмента.
@@ -19,6 +21,7 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.0.0",
     "pre-commit>=3.7.0",
+    "httpx>=0.24.0",
 ]
 
 [project.scripts]
