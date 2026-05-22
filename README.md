@@ -25,6 +25,12 @@
    - [Тема 11 — Линтер и форматтер: Ruff](#тема-11--линтер-и-форматтер-ruff)
    - [Тема 12 — Pre-commit хуки](#тема-12--pre-commit-хуки)
    - [Тема 13 — Рекурсивный поиск: флаг --recursive](#тема-13--рекурсивный-поиск-флаг---recursive)
+   - [Тема 14 — Git: базовые команды и рабочий процесс](#тема-14--git-базовые-команды-и-рабочий-процесс)
+   - [Тема 15 — GitHub CLI (gh)](#тема-15--github-cli-gh)
+   - [Тема 16 — Создание репозитория и remote](#тема-16--создание-репозитория-и-remote)
+   - [Тема 17 — Ветки: feature-branch workflow](#тема-17--ветки-feature-branch-workflow)
+   - [Тема 18 — Pull Request](#тема-18--pull-request)
+   - [Тема 19 — GitHub Actions CI](#тема-19--github-actions-ci)
 6. [Зависимости](#зависимости)
 
 ---
@@ -985,6 +991,465 @@ recursive: bool = typer.Option(
 
 ---
 
+### Тема 14 — Git: базовые команды и рабочий процесс
+
+**Git** — система контроля версий. Хранит всю историю изменений проекта, позволяет
+откатиться к любому состоянию, работать в параллельных ветках и объединять изменения.
+
+**Инициализация репозитория:**
+
+```bash
+git init          # создать новый репозиторий в текущей папке
+git clone <url>   # скачать существующий репозиторий с GitHub
+```
+
+**Просмотр состояния:**
+
+```bash
+git status        # показать изменённые и неотслеживаемые файлы
+git log           # история коммитов
+git log --oneline # история в сжатом виде — по одной строке на коммит
+git diff          # что изменилось в файлах (ещё не добавлено в staging)
+git diff --staged # что добавлено в staging и войдёт в следующий коммит
+```
+
+**Создание коммита — три шага:**
+
+```bash
+# Шаг 1: посмотреть что изменилось
+git status
+
+# Шаг 2: добавить нужные файлы в staging (подготовить к коммиту)
+git add src/cli_file_processor/cli.py   # конкретный файл
+git add src/                            # всю папку
+git add -p                              # интерактивно — по кускам изменений
+
+# Шаг 3: зафиксировать изменения
+git commit -m "add --recursive flag to scan command"
+```
+
+**Staging area (индекс)** — промежуточная зона между рабочей папкой и коммитом.
+Позволяет выбрать точно что войдёт в коммит, даже если изменений много.
+
+```
+Рабочая папка  →  git add  →  Staging area  →  git commit  →  История
+```
+
+**Отмена изменений:**
+
+```bash
+git restore <file>          # отменить изменения в файле (до git add)
+git restore --staged <file> # убрать файл из staging (после git add)
+git revert <commit-hash>    # создать новый коммит, отменяющий старый
+```
+
+**`.gitignore`** — файл со списком того, что Git должен игнорировать:
+
+```
+.venv/          # виртуальное окружение — у каждого своё
+__pycache__/    # кеш Python — генерируется автоматически
+.env            # секреты — никогда не коммитить
+data/output/    # результаты работы — не код
+*.pyc           # скомпилированные файлы Python
+```
+
+**Хорошие практики коммитов:**
+
+```bash
+# Плохо — непонятно что сделано
+git commit -m "fix"
+git commit -m "changes"
+
+# Хорошо — ясно что и зачем
+git commit -m "add --recursive flag to scan command"
+git commit -m "fix ruff format errors in tests/"
+git commit -m "update README with GitHub Actions topics"
+```
+
+Формат: глагол в настоящем времени + что сделано. Коммит = одно логическое изменение.
+
+---
+
+### Тема 15 — GitHub CLI (gh)
+
+**`gh`** — официальный CLI от GitHub. Позволяет работать с репозиториями,
+PR, Issues и Actions прямо из терминала без браузера.
+
+**Установка:**
+
+```bash
+# Ubuntu / Debian
+sudo apt install gh
+
+# macOS
+brew install gh
+
+# Проверить установку
+gh --version
+```
+
+**Авторизация:**
+
+```bash
+gh auth login
+```
+
+Команда задаёт вопросы интерактивно:
+
+```
+? What account do you want to log into?   → GitHub.com
+? What is your preferred protocol?         → SSH (или HTTPS)
+? Upload your SSH public key?              → выбрать ключ из ~/.ssh/
+? Title for your SSH key:                  → Enter (оставить по умолчанию)
+? How would you like to authenticate?      → Login with a web browser
+```
+
+При выборе браузера — показывает одноразовый код (например `65ED-50CF`),
+открывает `github.com/login/device`, ты вводишь код и подтверждаешь.
+
+**Проверить статус авторизации:**
+
+```bash
+gh auth status
+# github.com
+#   ✓ Logged in to github.com account DaniarSher81212
+#   - Git operations protocol: SSH
+#   - Token scopes: 'gist', 'read:org', 'repo', 'workflow'
+```
+
+**Основные команды `gh`:**
+
+```bash
+# Репозитории
+gh repo create        # создать новый репозиторий
+gh repo clone <repo>  # клонировать репозиторий
+gh repo view          # открыть репозиторий в браузере
+
+# Pull Requests
+gh pr create          # создать PR
+gh pr list            # список открытых PR
+gh pr view            # посмотреть PR
+gh pr merge           # смержить PR
+
+# GitHub Actions
+gh run list           # список последних запусков CI
+gh run watch          # следить за текущим запуском в реальном времени
+gh run view --log-failed  # показать логи упавшего запуска
+
+# Issues
+gh issue create       # создать задачу
+gh issue list         # список задач
+```
+
+---
+
+### Тема 16 — Создание репозитория и remote
+
+**Создание репозитория через `gh`:**
+
+```bash
+# Создать публичный репозиторий из текущей папки,
+# добавить remote и сразу запушить текущую ветку
+gh repo create cli-file-processor --public --source=. --remote=origin --push
+```
+
+Флаги:
+- `--public` — публичный репозиторий (виден всем)
+- `--source=.` — использовать текущую папку как источник
+- `--remote=origin` — добавить remote с именем `origin`
+- `--push` — сразу запушить текущую ветку
+
+**Что такое remote:**
+
+Remote — это ссылка на репозиторий на сервере (GitHub, GitLab, Bitbucket).
+Локальный git знает куда пушить и откуда тянуть изменения.
+
+```bash
+git remote -v              # показать все remotes
+git remote add origin <url> # добавить remote вручную
+git remote remove origin    # удалить remote
+```
+
+Имя `origin` — соглашение. Технически можно назвать как угодно,
+но `origin` понимают все.
+
+**Push и pull:**
+
+```bash
+# Первый push — устанавливает связь ветки с remote
+git push -u origin main
+# -u = --set-upstream: запоминает что local main → remote origin/main
+
+# Следующие push'и — уже без флагов
+git push
+
+# Забрать изменения с GitHub
+git pull
+git pull origin main  # явно указать remote и ветку
+```
+
+**Запушить конкретную ветку:**
+
+```bash
+git push origin feature/recursive    # запушить ветку на GitHub
+git push origin --delete my-branch  # удалить ветку на GitHub
+```
+
+---
+
+### Тема 17 — Ветки: feature-branch workflow
+
+**Ветка** — независимая линия разработки. В `main` хранится стабильный код,
+новые фичи делаются в отдельных ветках.
+
+**Зачем ветки:**
+```
+main             ← всегда рабочий, стабильный код
+├── feature/recursive   ← разработка новой фичи
+├── fix/scanner-bug     ← исправление бага
+└── docs/readme-update  ← обновление документации
+```
+
+Пока делаешь фичу в своей ветке — `main` не трогается. Сломал что-то?
+Удалил ветку — `main` цел.
+
+**Создание и переключение:**
+
+```bash
+# Создать ветку и сразу переключиться на неё
+git checkout -b feature/recursive
+
+# Современный синтаксис (git 2.23+)
+git switch -c feature/recursive
+
+# Просто переключиться на существующую ветку
+git checkout main
+git switch main
+
+# Список всех веток
+git branch          # локальные
+git branch -r       # remote-ветки
+git branch -a       # все
+```
+
+**Типичный цикл работы:**
+
+```bash
+# 1. Создать ветку от актуального main
+git switch main
+git pull
+git switch -c feature/my-feature
+
+# 2. Работать — коммитить по мере прогресса
+git add ...
+git commit -m "..."
+
+# 3. Запушить ветку на GitHub
+git push -u origin feature/my-feature
+
+# 4. Открыть PR (см. следующую тему)
+
+# 5. После merge — удалить ветку локально
+git branch -d feature/my-feature
+```
+
+**Соглашения по именованию веток:**
+
+```
+feature/<название>   — новая функциональность:  feature/recursive-search
+fix/<название>       — исправление бага:         fix/scanner-empty-dir
+docs/<название>      — документация:             docs/readme-github
+refactor/<название>  — рефакторинг:              refactor/output-module
+```
+
+---
+
+### Тема 18 — Pull Request
+
+**Pull Request (PR)** — запрос на слияние ветки в `main`. Это место для
+code review: другие разработчики смотрят код, оставляют комментарии,
+CI прогоняет тесты. Только после одобрения — merge.
+
+**Создание PR через `gh`:**
+
+```bash
+gh pr create \
+  --title "Add --recursive flag to scan and process" \
+  --body "..." \
+  --base main \
+  --head feature/recursive
+```
+
+Флаги:
+- `--title` — заголовок PR (кратко, до 70 символов)
+- `--body` — описание: что сделано, как тестировать
+- `--base` — куда мержим (обычно `main`)
+- `--head` — что мержим (твоя ветка)
+
+**Просмотр PR:**
+
+```bash
+gh pr list               # список открытых PR
+gh pr view 1             # посмотреть PR #1
+gh pr view 1 --web       # открыть PR #1 в браузере
+gh pr checks 1           # статус CI-проверок
+```
+
+**Merge PR:**
+
+```bash
+# Слить PR и удалить ветку на GitHub
+gh pr merge 1 --merge --delete-branch
+
+# Виды merge:
+gh pr merge 1 --merge   # обычный merge commit
+gh pr merge 1 --squash  # все коммиты ветки → один коммит
+gh pr merge 1 --rebase  # rebase поверх main
+```
+
+**`--delete-branch`** — удаляет ветку на GitHub после merge.
+Хорошая практика: смержил → почистил. Старые ветки захламляют репозиторий.
+
+**Хорошее описание PR** содержит:
+```markdown
+## Summary
+- Что сделано (буллеты)
+
+## Test plan
+- [ ] pytest проходит
+- [ ] Проверил вручную: cli-file-processor scan --recursive
+- [ ] CI зелёный
+```
+
+**Жизненный цикл PR:**
+
+```
+git push origin feature/my-feature
+          ↓
+gh pr create
+          ↓
+CI запускается автоматически (GitHub Actions)
+          ↓
+Code review (комментарии, правки)
+          ↓
+CI зелёный + одобрение
+          ↓
+gh pr merge --delete-branch
+          ↓
+Код в main ✓
+```
+
+---
+
+### Тема 19 — GitHub Actions CI
+
+**Файл:** `.github/workflows/ci.yml`
+
+**GitHub Actions** — встроенная система автоматизации GitHub. Запускает
+команды на виртуальных машинах в ответ на события в репозитории.
+
+**Полный разбор файла `ci.yml`:**
+
+```yaml
+name: CI   # имя workflow — отображается во вкладке Actions на GitHub
+
+# Триггеры — когда запускать workflow
+on:
+  push:
+    branches: [main, "feature/**"]   # при push в main или любую feature-ветку
+  pull_request:
+    branches: [main]                 # при открытии или обновлении PR в main
+
+jobs:
+  test:                        # имя job (может быть несколько jobs)
+    runs-on: ubuntu-latest     # тип виртуальной машины
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # использовать Node.js 24
+
+    steps:
+      # actions/checkout — скачивает код репозитория на виртуальную машину
+      # без этого шага машина не знает о твоём коде
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # actions/setup-python — устанавливает нужную версию Python
+      # на ubuntu-latest Python может быть другой версии
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # run: — произвольная bash-команда
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check src/ tests/
+
+      - name: Ruff format check
+        run: ruff format --check src/ tests/
+
+      - name: Run tests
+        run: pytest tests/ -v
+```
+
+**Просмотр результатов через `gh`:**
+
+```bash
+# Список последних запусков
+gh run list
+# STATUS  TITLE                    BRANCH            EVENT  ID
+# ✓       add CI workflow          feature/recursive  push   123456
+
+# Следить за запуском в реальном времени
+gh run watch 123456
+
+# Посмотреть что упало (только логи упавших шагов)
+gh run view 123456 --log-failed
+
+# Полный лог всего запуска
+gh run view 123456 --log
+```
+
+**Что видит CI в упавшем шаге:**
+
+```
+test  Ruff format check  Would reformat: tests/test_cli.py
+test  Ruff format check  2 files would be reformatted
+test  Ruff format check  Error: Process completed with exit code 1.
+```
+
+Это значит: файлы не отформатированы. Запускаешь `ruff format tests/`,
+коммитишь, пушишь — CI перезапускается.
+
+**Чему учит CI:**
+
+- Код проверяется на чистой машине — нет "у меня работает, у тебя нет"
+- Каждый push автоматически проходит через lint + format + tests
+- PR нельзя смержить пока CI красный — защита ветки `main`
+- Логи доступны всей команде — любой видит что упало и почему
+
+**Матрица версий (продвинутое):**
+
+Можно проверять на нескольких версиях Python одновременно:
+
+```yaml
+jobs:
+  test:
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+```
+
+Запустит три параллельных job — один на каждую версию.
+
+---
+
 ## Зависимости
 
 | Библиотека | Назначение | Тип |
@@ -995,6 +1460,13 @@ recursive: bool = typer.Option(
 | `pytest` | Запуск и организация тестов | dev |
 | `ruff` | Линтер + форматтер кода | dev |
 | `pre-commit` | Автозапуск проверок перед git commit | dev |
+
+**Внешние инструменты (устанавливаются отдельно, не через pip):**
+
+| Инструмент | Назначение | Установка |
+|------------|-----------|-----------|
+| `git` | Система контроля версий | `sudo apt install git` |
+| `gh` | GitHub CLI — управление репо, PR, Actions | `sudo apt install gh` |
 
 **Стандартные библиотеки Python (не нужно устанавливать):**
 
