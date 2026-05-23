@@ -47,6 +47,7 @@
    - [Тема 33 — Rich Progress Bar: прогресс-бар для долгих операций](#тема-33--rich-progress-bar-прогресс-бар-для-долгих-операций)
    - [Тема 34 — Кастомные исключения: иерархия ошибок проекта](#тема-34--кастомные-исключения-иерархия-ошибок-проекта)
    - [Тема 35 — Dataclasses: структурированные результаты вместо сырых списков](#тема-35--dataclasses-структурированные-результаты-вместо-сырых-списков)
+   - [Тема 36 — Контекст-менеджеры: `with`, `__enter__`/`__exit__`, `@contextmanager`](#тема-36--контекст-менеджеры-with-__enter____exit__-contextmanager)
 6. [Зависимости](#зависимости)
 
 ---
@@ -3239,6 +3240,299 @@ scan_files()  →  ScanResult   →  cli.py берёт result и всё нужн
 ```
 
 Слои больше не обмениваются "сырыми" структурами (`list[Path]`). Они передают **объекты с контекстом**, которые несут всё необходимое для следующего шага.
+
+---
+
+### Тема 36 — Контекст-менеджеры: `with`, `__enter__`/`__exit__`, `@contextmanager`
+
+**Файлы:** `src/cli_file_processor/core/timer.py` (новый), изменены `cli.py`, `output.py`
+
+#### Что такое контекст-менеджер и зачем он нужен
+
+Контекст-менеджер — объект, который управляет ресурсом: захватывает его при входе в блок `with` и гарантированно освобождает при выходе — даже если произошло исключение.
+
+**Без контекст-менеджера** нужно вручную следить за cleanup:
+
+```python
+# Открыть файл — нужно не забыть закрыть
+f = open("file.txt")
+try:
+    data = f.read()
+finally:
+    f.close()   # ← надо помнить, легко пропустить
+```
+
+**С контекст-менеджером** cleanup автоматический:
+
+```python
+with open("file.txt") as f:
+    data = f.read()
+# f.close() вызовется здесь автоматически — даже при исключении
+```
+
+Контекст-менеджер отвечает на вопрос: **"что нужно сделать при входе и выходе из блока?"**
+
+---
+
+#### Синтаксис `with`
+
+```python
+with ВЫРАЖЕНИЕ as ПЕРЕМЕННАЯ:
+    # тело блока
+```
+
+- `ВЫРАЖЕНИЕ` — объект-контекст-менеджер
+- `as ПЕРЕМЕННАЯ` — опционально: получить значение, которое вернул `__enter__`
+- При выходе из блока (нормально или через исключение) всегда вызывается `__exit__`
+
+```python
+# as можно опустить, если возвращаемое значение не нужно:
+with open("file.txt"):
+    ...
+
+# Несколько менеджеров в одной строке:
+with open("src.txt") as src, open("dst.txt", "w") as dst:
+    dst.write(src.read())
+```
+
+---
+
+#### Способ 1 — класс с `__enter__` и `__exit__`
+
+Python вызывает эти два метода автоматически:
+
+```
+with Timer() as t:
+    do_work()
+    
+↓ разворачивается в:
+
+_cm = Timer()
+t = _cm.__enter__()      # вызывается при входе в with
+try:
+    do_work()
+finally:
+    _cm.__exit__(...)    # вызывается при выходе — всегда
+```
+
+В нашем проекте — `Timer` из `core/timer.py`:
+
+```python
+class Timer:
+    def __init__(self) -> None:
+        self.elapsed: Elapsed | None = None
+        self._start: float = 0.0
+
+    def __enter__(self) -> "Timer":
+        # Вызывается при входе в with. Запускаем секундомер.
+        # Возвращаем self — именно этот объект попадёт в переменную after as.
+        self._start = time.perf_counter()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,   # тип исключения (None если не было)
+        exc_val: BaseException | None,           # объект исключения
+        exc_tb: object,                          # traceback
+    ) -> bool:
+        # Вызывается при выходе из with — ВСЕГДА, даже при исключении.
+        self.elapsed = Elapsed(time.perf_counter() - self._start)
+        return False   # False = не подавлять исключение
+```
+
+**Три параметра `__exit__`:**
+
+| Параметр | Что содержит | При нормальном выходе |
+|----------|-------------|----------------------|
+| `exc_type` | Класс исключения (`ValueError`, `OSError`, ...) | `None` |
+| `exc_val` | Объект исключения | `None` |
+| `exc_tb` | Traceback | `None` |
+
+**Возвращаемое значение `__exit__`:**
+
+```python
+return False   # исключение пробрасывается дальше (обычное поведение)
+return True    # исключение ПОДАВЛЯЕТСЯ — как будто его не было
+```
+
+Подавлять исключения нужно редко — только когда это осмысленно (например, `contextlib.suppress`).
+
+---
+
+#### Способ 2 — генераторная функция с `@contextmanager`
+
+`contextlib.contextmanager` — декоратор, который превращает генераторную функцию в контекст-менеджер. Это более лаконичный способ для простых случаев.
+
+```python
+from contextlib import contextmanager
+
+@contextmanager
+def timed() -> Generator[Timer, None, None]:
+    t = Timer()
+    t._start = time.perf_counter()
+    try:
+        yield t          # ← здесь выполняется тело with-блока
+    finally:
+        t.elapsed = Elapsed(time.perf_counter() - t._start)
+```
+
+**Как это работает:**
+
+```
+with timed() as t:
+    do_work()
+
+↓ эквивалентно:
+
+генератор запускается → выполняется код ДО yield → yield t
+  → t попадает в переменную, выполняется тело with-блока
+  → при выходе (нормально или исключение) генератор возобновляется → finally
+```
+
+| Часть генератора | Роль |
+|-----------------|------|
+| Код до `yield` | `__enter__` |
+| `yield <значение>` | Значение для `as`, пауза на время тела блока |
+| `finally` после `yield` | `__exit__` — выполняется всегда |
+
+**Почему обязательно `try/finally`:**
+
+```python
+# БЕЗ try/finally — cleanup не выполнится при исключении:
+@contextmanager
+def bad_timed():
+    start = time.perf_counter()
+    yield
+    elapsed = time.perf_counter() - start  # ← эта строка не выполнится если было исключение!
+    print(f"Время: {elapsed}")
+
+# С try/finally — cleanup всегда выполнится:
+@contextmanager
+def good_timed():
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed = time.perf_counter() - start  # ← выполнится в любом случае
+        print(f"Время: {elapsed}")
+```
+
+---
+
+#### `Elapsed` — датакласс с умным `__str__`
+
+```python
+@dataclass
+class Elapsed:
+    seconds: float
+
+    def __str__(self) -> str:
+        if self.seconds < 1:
+            return f"{int(self.seconds * 1000)}ms"   # 0.025 → "25ms"
+        return f"{self.seconds:.2f}s"                 # 1.234 → "1.23s"
+```
+
+`__str__` — магический метод, который вызывается когда объект нужно представить как строку: `str(e)`, `f"{e}"`, `print(e)`. Здесь он позволяет писать `f"время: {t.elapsed}"` и получать красивый вывод автоматически.
+
+---
+
+#### `contextlib.suppress` — встроенный подавитель исключений
+
+Стандартная библиотека уже содержит контекст-менеджер для подавления конкретных исключений:
+
+```python
+from contextlib import suppress
+
+# Вместо:
+try:
+    os.remove("temp.txt")
+except FileNotFoundError:
+    pass   # файла нет — ничего страшного
+
+# Можно писать:
+with suppress(FileNotFoundError):
+    os.remove("temp.txt")
+```
+
+`suppress` реализован через `__exit__` с `return True` для указанных типов исключений — хороший пример того, когда подавление исключений оправдано.
+
+---
+
+#### Контекст-менеджеры в нашем проекте до этой темы
+
+Проект уже использовал контекст-менеджеры — теперь понятно как они работают изнутри:
+
+| Место | Менеджер | Что делает при выходе |
+|-------|---------|----------------------|
+| `output.py` | `with Progress(...) as progress:` | Останавливает и очищает прогресс-бар |
+| `conftest.py` | `with TestClient(app) as client:` | Запускает/останавливает FastAPI lifecycle |
+| `test_scanner.py` | `with pytest.raises(SomeError):` | Проверяет что исключение было брошено |
+
+---
+
+#### Итоговый код
+
+**`core/timer.py`** — класс-based и generator-based менеджеры:
+
+```python
+class Timer:
+    def __enter__(self) -> "Timer":
+        self._start = time.perf_counter()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self.elapsed = Elapsed(time.perf_counter() - self._start)
+        return False
+
+
+@contextmanager
+def timed() -> Generator[Timer, None, None]:
+    t = Timer()
+    t._start = time.perf_counter()
+    try:
+        yield t
+    finally:
+        t.elapsed = Elapsed(time.perf_counter() - t._start)
+```
+
+**`cli.py`** — Timer оборачивает `scan_files`, elapsed передаётся в вывод:
+
+```python
+# scan команда:
+with Timer() as t:
+    result = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
+print_scan_results(result, elapsed=t.elapsed)
+# → "Найдено: 5 файл(ов)  12ms"
+
+# process команда:
+with Timer() as process_timer:
+    process_result = process_files_with_progress(scan_result.files, output_dir)
+print_process_results(process_result, elapsed=process_timer.elapsed)
+# → "Готово: скопировано 5 файл(ов) в data/output  43ms"
+```
+
+**`output.py`** — функции принимают опциональный `elapsed`:
+
+```python
+def print_scan_results(result: ScanResult, elapsed: Elapsed | None = None) -> None:
+    ...
+    timing = f"  [dim]{elapsed}[/dim]" if elapsed else ""
+    console.print(f"Найдено: [bold]{result.total}[/bold] файл(ов){timing}")
+```
+
+---
+
+#### Класс vs `@contextmanager` — когда что выбирать
+
+| | Класс с `__enter__`/`__exit__` | `@contextmanager` |
+|---|---|---|
+| Синтаксис | Больше кода | Компактнее |
+| Состояние | Легко хранить в `self` | Через локальные переменные до/после `yield` |
+| Переиспользование | Удобно наследовать | Нельзя |
+| Читаемость | Явная структура | Нагляднее для простых случаев |
+| Когда выбирать | Сложная логика, хранение состояния | Простой setup/teardown |
+
+В проекте `Timer` реализован обоими способами — `Timer` (класс) и `timed()` (генератор) делают одно и то же. В `cli.py` используется `Timer`, потому что нам нужен доступ к `t.elapsed` после блока.
 
 ---
 

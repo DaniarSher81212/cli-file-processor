@@ -26,6 +26,7 @@ from rich.progress import (
 from rich.table import Table
 
 from cli_file_processor.core.models import ProcessResult, ScanResult
+from cli_file_processor.core.timer import Elapsed
 
 # Создаём один Console на весь модуль.
 # highlight=False — отключает автоподсветку чисел и строк (нам не нужна).
@@ -61,13 +62,13 @@ def print_warning(message: str) -> None:
     console.print(f"[yellow]Предупреждение:[/yellow] {message}")
 
 
-def print_scan_results(result: ScanResult) -> None:
+def print_scan_results(result: ScanResult, elapsed: Elapsed | None = None) -> None:
     """
     Выводит результаты сканирования в виде таблицы.
 
     Аргументы:
-        result — объект ScanResult с файлами и контекстом сканирования.
-                 result.recursive определяет, показывать ли относительные пути.
+        result  — объект ScanResult с файлами и контекстом сканирования.
+        elapsed — время сканирования (опционально).
     """
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Файл", style="white")
@@ -90,7 +91,8 @@ def print_scan_results(result: ScanResult) -> None:
         table.add_row(display_name, file_path.suffix, _format_size(size))
 
     console.print(table)
-    console.print(f"Найдено: [bold]{result.total}[/bold] файл(ов)")
+    timing = f"  [dim]{elapsed}[/dim]" if elapsed else ""
+    console.print(f"Найдено: [bold]{result.total}[/bold] файл(ов){timing}")
 
 
 def process_files_with_progress(files: list[Path], output_dir: Path) -> ProcessResult:
@@ -138,11 +140,12 @@ def process_files_with_progress(files: list[Path], output_dir: Path) -> ProcessR
     return ProcessResult(processed=all_processed, output_dir=output_dir)
 
 
-def print_process_results(result: ProcessResult) -> None:
+def print_process_results(result: ProcessResult, elapsed: Elapsed | None = None) -> None:
     """Выводит итоги команды process."""
+    timing = f"  [dim]{elapsed}[/dim]" if elapsed else ""
     console.print(
         f"\nГотово: скопировано [bold green]{result.total}[/bold green] файл(ов) "
-        f"в [cyan]{result.output_dir}[/cyan]"
+        f"в [cyan]{result.output_dir}[/cyan]{timing}"
     )
 
 

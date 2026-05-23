@@ -20,6 +20,7 @@ from cli_file_processor.config import (
 
 # Импортируем бизнес-логику поиска файлов из core/scanner.py
 from cli_file_processor.core.scanner import scan_files
+from cli_file_processor.core.timer import Timer
 from cli_file_processor.exceptions import ProcessorError
 
 # Импортируем функцию настройки логирования
@@ -101,7 +102,10 @@ def scan(
     # scanner.py сам проверяет директорию и бросает ProcessorError если что-то не так.
     # CLI ловит базовый класс — любая ошибка бизнес-логики обрабатывается одинаково.
     try:
-        result = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
+        # Timer измеряет время даже если scan_files бросит исключение:
+        # __exit__ вызовется до того как исключение дойдёт до except.
+        with Timer() as t:
+            result = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
     except ProcessorError as e:
         print_error(str(e))
         raise typer.Exit(code=1)
@@ -110,7 +114,7 @@ def scan(
         print_warning(f"файлы с расширением {extension} не найдены.")
         return
 
-    print_scan_results(result)
+    print_scan_results(result, elapsed=t.elapsed)
 
 
 @app.command()
@@ -178,5 +182,6 @@ def process(
     if dry_run:
         print_dry_run_results(scan_result, output_dir)
     else:
-        process_result = process_files_with_progress(scan_result.files, output_dir)
-        print_process_results(process_result)
+        with Timer() as process_timer:
+            process_result = process_files_with_progress(scan_result.files, output_dir)
+        print_process_results(process_result, elapsed=process_timer.elapsed)
