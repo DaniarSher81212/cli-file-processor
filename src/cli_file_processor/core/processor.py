@@ -12,10 +12,12 @@ import logging
 import shutil
 from pathlib import Path
 
+from cli_file_processor.core.models import ProcessResult
+
 logger = logging.getLogger(__name__)
 
 
-def process_files(files: list[Path], output_dir: Path) -> list[Path]:
+def process_files(files: list[Path], output_dir: Path) -> ProcessResult:
     """
     Копирует файлы из списка в папку output_dir.
 
@@ -27,7 +29,7 @@ def process_files(files: list[Path], output_dir: Path) -> list[Path]:
         output_dir — папка назначения
 
     Возвращает:
-        Список путей к скопированным файлам в output_dir.
+        ProcessResult — объект с путями к скопированным файлам и папкой назначения.
     """
 
     # mkdir() — создать папку.
@@ -56,4 +58,4 @@ def process_files(files: list[Path], output_dir: Path) -> list[Path]:
         processed.append(destination_path)
 
     logger.debug("обработано файлов: %d", len(processed))
-    return processed
+    return ProcessResult(processed=processed, output_dir=output_dir)

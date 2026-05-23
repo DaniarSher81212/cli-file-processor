@@ -4,10 +4,11 @@
 
 from pathlib import Path
 
+from cli_file_processor.core.models import ProcessResult
 from cli_file_processor.core.processor import process_files
 
 
-def test_process_files_copies_to_output(tmp_path: Path):
+def test_process_files_copies_to_output(tmp_path: Path) -> None:
     # Создаём структуру: input/ и output/ во временной папке
     input_dir = tmp_path / "input"
     input_dir.mkdir()
@@ -24,7 +25,7 @@ def test_process_files_copies_to_output(tmp_path: Path):
     assert (output_dir / "file.txt").exists()
 
 
-def test_process_files_creates_output_dir(tmp_path: Path):
+def test_process_files_creates_output_dir(tmp_path: Path) -> None:
     # Проверяем что process_files создаёт output_dir если её нет
     input_dir = tmp_path / "input"
     input_dir.mkdir()
@@ -39,7 +40,7 @@ def test_process_files_creates_output_dir(tmp_path: Path):
     assert output_dir.exists()
 
 
-def test_process_files_preserves_content(tmp_path: Path):
+def test_process_files_preserves_content(tmp_path: Path) -> None:
     # Проверяем что содержимое файла сохраняется при копировании
     input_dir = tmp_path / "input"
     input_dir.mkdir()
@@ -55,8 +56,8 @@ def test_process_files_preserves_content(tmp_path: Path):
     assert copied_content == "важное содержимое 123"
 
 
-def test_process_files_returns_destination_paths(tmp_path: Path):
-    # process_files должен вернуть пути в output_dir, а не в input_dir
+def test_process_files_returns_process_result(tmp_path: Path) -> None:
+    # process_files должен вернуть ProcessResult, а не list[Path]
     input_dir = tmp_path / "input"
     input_dir.mkdir()
     output_dir = tmp_path / "output"
@@ -66,12 +67,26 @@ def test_process_files_returns_destination_paths(tmp_path: Path):
 
     result = process_files([source_file], output_dir)
 
-    assert len(result) == 1
+    assert isinstance(result, ProcessResult)
+
+
+def test_process_files_returns_destination_paths(tmp_path: Path) -> None:
+    # result.processed должен содержать пути в output_dir, а не в input_dir
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+    output_dir = tmp_path / "output"
+
+    source_file = input_dir / "file.txt"
+    source_file.write_text("")
+
+    result = process_files([source_file], output_dir)
+
+    assert result.total == 1
     # Путь должен указывать в output_dir
-    assert result[0].parent == output_dir
+    assert result.processed[0].parent == output_dir
 
 
-def test_process_files_handles_multiple_files(tmp_path: Path):
+def test_process_files_handles_multiple_files(tmp_path: Path) -> None:
     input_dir = tmp_path / "input"
     input_dir.mkdir()
     output_dir = tmp_path / "output"
@@ -84,13 +99,13 @@ def test_process_files_handles_multiple_files(tmp_path: Path):
 
     result = process_files(files, output_dir)
 
-    assert len(result) == 3
+    assert result.total == 3
     # Все три файла должны быть в output_dir
     for name in ["a.txt", "b.txt", "c.txt"]:
         assert (output_dir / name).exists()
 
 
-def test_process_files_overwrites_existing(tmp_path: Path):
+def test_process_files_overwrites_existing(tmp_path: Path) -> None:
     # Если файл уже есть в output — он должен перезаписаться
     input_dir = tmp_path / "input"
     input_dir.mkdir()
@@ -108,3 +123,28 @@ def test_process_files_overwrites_existing(tmp_path: Path):
     process_files([source_file], output_dir)
 
     assert old_file.read_text() == "новое содержимое"
+
+
+def test_process_result_output_dir_metadata(tmp_path: Path) -> None:
+    # ProcessResult хранит output_dir — можно получить без отдельного аргумента
+    output_dir = tmp_path / "output"
+    source_file = tmp_path / "file.txt"
+    source_file.write_text("test")
+
+    result = process_files([source_file], output_dir)
+
+    assert result.output_dir == output_dir
+
+
+def test_process_result_total_matches_processed_count(tmp_path: Path) -> None:
+    # total — @property, не хранится отдельно
+    output_dir = tmp_path / "output"
+    files = []
+    for name in ["x.txt", "y.txt"]:
+        f = tmp_path / name
+        f.write_text("")
+        files.append(f)
+
+    result = process_files(files, output_dir)
+
+    assert result.total == len(result.processed) == 2

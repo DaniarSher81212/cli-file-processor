@@ -25,6 +25,8 @@ from rich.progress import (
 # Table — объект для построения таблиц с рамками и колонками.
 from rich.table import Table
 
+from cli_file_processor.core.models import ProcessResult, ScanResult
+
 # Создаём один Console на весь модуль.
 # highlight=False — отключает автоподсветку чисел и строк (нам не нужна).
 console = Console(highlight=False)
@@ -59,29 +61,28 @@ def print_warning(message: str) -> None:
     console.print(f"[yellow]Предупреждение:[/yellow] {message}")
 
 
-def print_scan_results(files: list[Path], base_dir: Path | None = None) -> None:
+def print_scan_results(result: ScanResult) -> None:
     """
     Выводит результаты сканирования в виде таблицы.
 
     Аргументы:
-        files    — список найденных файлов (объекты Path)
-        base_dir — если передана, показывает путь относительно этой папки.
-                   Нужно для режима --recursive: видно в какой подпапке файл.
+        result — объект ScanResult с файлами и контекстом сканирования.
+                 result.recursive определяет, показывать ли относительные пути.
     """
     table = Table(show_header=True, header_style="bold cyan")
     table.add_column("Файл", style="white")
     table.add_column("Расширение", style="dim")
     table.add_column("Размер", justify="right", style="green")
 
-    for file_path in files:
+    for file_path in result.files:
         size = file_path.stat().st_size
 
-        if base_dir is not None:
+        if result.recursive:
             # .relative_to(base_dir) — путь относительно base_dir.
             # Пример: Path("data/input/reports/file.txt").relative_to(Path("data/input"))
             #       → Path("reports/file.txt")
             # Так пользователь видит в какой подпапке находится файл.
-            display_name = str(file_path.relative_to(base_dir))
+            display_name = str(file_path.relative_to(result.scanned_dir))
         else:
             # Обычный режим — только имя файла
             display_name = file_path.name
@@ -89,10 +90,10 @@ def print_scan_results(files: list[Path], base_dir: Path | None = None) -> None:
         table.add_row(display_name, file_path.suffix, _format_size(size))
 
     console.print(table)
-    console.print(f"Найдено: [bold]{len(files)}[/bold] файл(ов)")
+    console.print(f"Найдено: [bold]{result.total}[/bold] файл(ов)")
 
 
-def process_files_with_progress(files: list[Path], output_dir: Path) -> list[Path]:
+def process_files_with_progress(files: list[Path], output_dir: Path) -> ProcessResult:
     """
     Копирует файлы в output_dir, показывая прогресс-бар Rich.
 
@@ -105,13 +106,13 @@ def process_files_with_progress(files: list[Path], output_dir: Path) -> list[Pat
         output_dir — папка назначения
 
     Возвращает:
-        Список путей к скопированным файлам.
+        ProcessResult — объект с итогами копирования.
     """
     # Импортируем здесь, чтобы не создавать циклический импорт на уровне модуля.
     # processor.py → output.py было бы плохо, но output.py → processor.py — нормально.
     from cli_file_processor.core.processor import process_files
 
-    processed: list[Path] = []
+    all_processed: list[Path] = []
 
     # Progress — контекстный менеджер (with). При выходе очищает строку прогресса.
     # Каждый аргумент — колонка, они выводятся слева направо.
@@ -130,22 +131,22 @@ def process_files_with_progress(files: list[Path], output_dir: Path) -> list[Pat
             # update() меняет description на лету — показываем текущий файл.
             progress.update(task, description=f"[cyan]{file_path.name}[/cyan]")
             result = process_files([file_path], output_dir)
-            processed.extend(result)
+            all_processed.extend(result.processed)
             # advance() увеличивает счётчик на 1 — прогресс-бар продвигается.
             progress.advance(task)
 
-    return processed
+    return ProcessResult(processed=all_processed, output_dir=output_dir)
 
 
-def print_process_results(processed: list[Path], output_dir: Path) -> None:
+def print_process_results(result: ProcessResult) -> None:
     """Выводит итоги команды process."""
     console.print(
-        f"\nГотово: скопировано [bold green]{len(processed)}[/bold green] файл(ов) "
-        f"в [cyan]{output_dir}[/cyan]"
+        f"\nГотово: скопировано [bold green]{result.total}[/bold green] файл(ов) "
+        f"в [cyan]{result.output_dir}[/cyan]"
     )
 
 
-def print_dry_run_results(files: list[Path], output_dir: Path) -> None:
+def print_dry_run_results(result: ScanResult, output_dir: Path) -> None:
     """
     Выводит предпросмотр команды process в режиме --dry-run.
 
@@ -161,7 +162,7 @@ def print_dry_run_results(files: list[Path], output_dir: Path) -> None:
     table.add_column("Файл", style="white")
     table.add_column("Куда будет скопирован", style="dim")
 
-    for file_path in files:
+    for file_path in result.files:
         # Строим путь назначения так же как это делает processor.py
         # но файл НЕ копируем
         destination = output_dir / file_path.name
@@ -169,6 +170,6 @@ def print_dry_run_results(files: list[Path], output_dir: Path) -> None:
 
     console.print(table)
     console.print(
-        f"\nИтого: [bold]{len(files)}[/bold] файл(ов) будет скопировано в [cyan]{output_dir}[/cyan]"
+        f"\nИтого: [bold]{result.total}[/bold] файл(ов) будет скопировано в [cyan]{output_dir}[/cyan]"
     )
     console.print("[dim]Запустите без --dry-run чтобы применить изменения.[/dim]")

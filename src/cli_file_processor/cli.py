@@ -101,18 +101,16 @@ def scan(
     # scanner.py сам проверяет директорию и бросает ProcessorError если что-то не так.
     # CLI ловит базовый класс — любая ошибка бизнес-логики обрабатывается одинаково.
     try:
-        files = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
+        result = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
     except ProcessorError as e:
         print_error(str(e))
         raise typer.Exit(code=1)
 
-    if not files:
+    if not result.files:
         print_warning(f"файлы с расширением {extension} не найдены.")
         return
 
-    # В режиме --recursive передаём input_dir чтобы таблица показывала
-    # относительные пути: "reports/monthly.txt" вместо просто "monthly.txt"
-    print_scan_results(files, base_dir=input_dir if recursive else None)
+    print_scan_results(result)
 
 
 @app.command()
@@ -168,17 +166,17 @@ def process(
         extension = get_default_extension()
 
     try:
-        files = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
+        scan_result = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
     except ProcessorError as e:
         print_error(str(e))
         raise typer.Exit(code=1)
 
-    if not files:
+    if not scan_result.files:
         print_warning(f"файлы с расширением {extension} не найдены.")
         return
 
     if dry_run:
-        print_dry_run_results(files, output_dir)
+        print_dry_run_results(scan_result, output_dir)
     else:
-        processed = process_files_with_progress(files, output_dir)
-        print_process_results(processed, output_dir)
+        process_result = process_files_with_progress(scan_result.files, output_dir)
+        print_process_results(process_result)

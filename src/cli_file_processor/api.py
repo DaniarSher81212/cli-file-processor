@@ -39,8 +39,8 @@ class FileInfo(BaseModel):
     extension: str  # расширение
 
 
-class ScanResult(BaseModel):
-    """Результат сканирования папки."""
+class ScanResponse(BaseModel):
+    """HTTP-ответ эндпоинта /scan."""
 
     total: int  # сколько файлов найдено
     files: list[FileInfo]  # список файлов
@@ -64,14 +64,14 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", version=settings.app_version)
 
 
-@app.get("/scan", response_model=ScanResult)
+@app.get("/scan", response_model=ScanResponse)
 def scan(
     # Query() — параметр из URL: /scan?extension=.txt&input_dir=data/input
     # default= — значение если параметр не передан.
     extension: str = Query(default=settings.default_extension),
     input_dir: str = Query(default=str(settings.default_input_dir)),
     recursive: bool = Query(default=False),
-) -> ScanResult:
+) -> ScanResponse:
     """
     Ищет файлы с указанным расширением в папке.
 
@@ -85,7 +85,7 @@ def scan(
     # API ловит конкретные типы исключений и маппит каждый в свой HTTP-код.
     # CLI делает то же самое, но реагирует иначе: печатает текст и выходит с кодом 1.
     try:
-        files = scan_files(input_dir=dir_path, extension=extension, recursive=recursive)
+        scan_result = scan_files(input_dir=dir_path, extension=extension, recursive=recursive)
     except InputDirNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except InputNotADirectoryError as e:
@@ -98,7 +98,7 @@ def scan(
             size=f.stat().st_size,
             extension=f.suffix,
         )
-        for f in files
+        for f in scan_result.files
     ]
 
-    return ScanResult(total=len(file_infos), files=file_infos)
+    return ScanResponse(total=scan_result.total, files=file_infos)

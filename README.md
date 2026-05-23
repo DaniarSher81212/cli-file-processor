@@ -46,6 +46,7 @@
    - [Тема 32 — conftest.py: общие fixtures и parametrize](#тема-32--conftestpy-общие-fixtures-и-parametrize)
    - [Тема 33 — Rich Progress Bar: прогресс-бар для долгих операций](#тема-33--rich-progress-bar-прогресс-бар-для-долгих-операций)
    - [Тема 34 — Кастомные исключения: иерархия ошибок проекта](#тема-34--кастомные-исключения-иерархия-ошибок-проекта)
+   - [Тема 35 — Dataclasses: структурированные результаты вместо сырых списков](#тема-35--dataclasses-структурированные-результаты-вместо-сырых-списков)
 6. [Зависимости](#зависимости)
 
 ---
@@ -2864,6 +2865,380 @@ def test_scan_raises_when_dir_not_found(tmp_path: Path) -> None:
 ```
 
 **Итог:** бизнес-логика бросает исключения, не зная кто их поймает. CLI и API реагируют по-своему на одно и то же исключение — разделение ответственности.
+
+---
+
+### Тема 35 — Dataclasses: структурированные результаты вместо сырых списков
+
+**Файлы:** `src/cli_file_processor/core/models.py` (новый), изменены `scanner.py`, `processor.py`, `output.py`, `cli.py`, `api.py`
+
+#### Проблема: сырые данные без контекста
+
+До этой темы функции возвращали "голые" типы:
+
+```python
+# scanner.py — было:
+def scan_files(...) -> list[Path]:
+    return files                  # просто список путей
+
+# processor.py — было:
+def process_files(...) -> list[Path]:
+    return processed              # тоже просто список путей
+```
+
+Вызывающий код (`cli.py`, `api.py`) получал список и сразу терял контекст: из какой папки сканировали? с каким расширением? был ли рекурсивный поиск? Эту информацию приходилось передавать отдельными аргументами в каждую следующую функцию.
+
+```python
+# cli.py — было: контекст тащится вручную через 3 функции
+files = scan_files(input_dir, extension, recursive)
+print_scan_results(files, base_dir=input_dir if recursive else None)
+#                          ↑ приходится знать про recursive здесь
+```
+
+#### Решение: dataclass как контейнер данных + контекст
+
+Создаём `core/models.py` с двумя датаклассами, которые несут в себе и данные, и контекст:
+
+```python
+# Стало: всё в одном объекте
+result = scan_files(input_dir, extension, recursive)
+print_scan_results(result)   # result сам знает про recursive
+```
+
+---
+
+#### Что такое dataclass
+
+`@dataclass` — декоратор из стандартной библиотеки `dataclasses`. Он автоматически генерирует несколько магических методов, которые иначе пришлось бы писать вручную.
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class ScanResult:
+    files: list[Path]
+    scanned_dir: Path
+    extension: str
+```
+
+Python видит это и автоматически создаёт:
+
+| Метод | Что делает | Пример |
+|-------|-----------|--------|
+| `__init__` | Конструктор — принимает все поля | `ScanResult(files=[...], scanned_dir=p, extension=".txt")` |
+| `__repr__` | Строковое представление для отладки | `ScanResult(files=[...], scanned_dir=PosixPath('...'), ...)` |
+| `__eq__` | Сравнение по значению полей | `r1 == r2` работает правильно |
+
+Без `@dataclass` пришлось бы писать всё это руками:
+
+```python
+# Без dataclass — много бойлерплейта:
+class ScanResult:
+    def __init__(self, files, scanned_dir, extension):
+        self.files = files
+        self.scanned_dir = scanned_dir
+        self.extension = extension
+
+    def __repr__(self):
+        return f"ScanResult(files={self.files!r}, ...)"
+
+    def __eq__(self, other):
+        if not isinstance(other, ScanResult):
+            return NotImplemented
+        return (self.files == other.files and
+                self.scanned_dir == other.scanned_dir and
+                self.extension == other.extension)
+```
+
+`@dataclass` заменяет всё это тремя строками с аннотациями типов.
+
+---
+
+#### Поля с дефолтами — правило для изменяемых типов
+
+У `ScanResult` есть поле `recursive: bool = False`. Это простое значение — дефолт безопасен.
+
+Но для **изменяемых типов** (`list`, `dict`, `set`) нельзя писать дефолт напрямую:
+
+```python
+# НЕПРАВИЛЬНО — Python создаст ОДИН список на все экземпляры класса:
+@dataclass
+class ScanResult:
+    errors: list[str] = []   # ← ошибка: ValueError от dataclass
+
+# ПРАВИЛЬНО — field(default_factory=list) создаёт новый список для каждого объекта:
+from dataclasses import dataclass, field
+
+@dataclass
+class ScanResult:
+    errors: list[str] = field(default_factory=list)
+```
+
+**Почему это важно:**
+
+```python
+# Демонстрация проблемы с изменяемым дефолтом (обычный класс, не dataclass):
+class Bad:
+    def __init__(self, items=[]):   # ← опасно
+        self.items = items
+
+a = Bad()
+b = Bad()
+a.items.append("x")
+print(b.items)   # ["x"] — b видит изменения в a!
+                 # Они ДЕЛЯТ один и тот же список!
+
+# С field(default_factory=list) каждый экземпляр получает СВОЙ список:
+@dataclass
+class Good:
+    items: list[str] = field(default_factory=list)
+
+a = Good()
+b = Good()
+a.items.append("x")
+print(b.items)   # [] — b не затронут
+```
+
+В нашем проекте поле `errors: list[str] = field(default_factory=list)` в `ScanResult` — это место для будущих предупреждений при сканировании. Каждый вызов `scan_files` получает свой независимый список.
+
+---
+
+#### @property — вычисляемые атрибуты
+
+`@property` — декоратор, который позволяет вызывать метод как атрибут (без скобок). Используется для значений, которые **вычисляются** из других полей и не должны храниться отдельно.
+
+```python
+@dataclass
+class ScanResult:
+    files: list[Path]
+    ...
+
+    @property
+    def total(self) -> int:
+        return len(self.files)
+```
+
+Использование:
+
+```python
+result = scan_files(...)
+print(result.total)      # работает как атрибут, не как метод
+# print(result.total())  # ← так НЕЛЬЗЯ, @property не требует скобок
+```
+
+**Зачем это лучше, чем хранить `total` как поле:**
+
+```python
+# Плохо — дублирование данных:
+@dataclass
+class ScanResult:
+    files: list[Path]
+    total: int           # может не совпадать с len(files)!
+
+result = ScanResult(files=[f1, f2], total=5)  # ← никто не мешает солгать
+
+# Хорошо — один источник правды:
+@dataclass
+class ScanResult:
+    files: list[Path]
+
+    @property
+    def total(self) -> int:
+        return len(self.files)   # всегда точно, невозможно рассинхронизировать
+```
+
+---
+
+#### __post_init__ — валидация после инициализации
+
+`__post_init__` — специальный метод, который `@dataclass` вызывает автоматически **после** `__init__`. Используется для проверки данных при создании объекта.
+
+```python
+@dataclass
+class ScanResult:
+    files: list[Path]
+    scanned_dir: Path
+    extension: str
+
+    def __post_init__(self) -> None:
+        # Эта проверка выполнится при каждом ScanResult(...)
+        if not self.extension.startswith("."):
+            raise ValueError(
+                f"расширение должно начинаться с точки, получено: {self.extension!r}"
+            )
+```
+
+В нашем проекте `scan_files` всегда нормализует расширение перед созданием `ScanResult`, поэтому ошибка в реальном коде не возникнет. Но `__post_init__` защищает от ошибок при прямом создании объекта (например, в тестах или при рефакторинге):
+
+```python
+# Это упадёт сразу при создании, а не где-то позже:
+ScanResult(files=[], scanned_dir=Path("."), extension="txt")
+# ValueError: расширение должно начинаться с точки, получено: 'txt'
+
+# Это нормально:
+ScanResult(files=[], scanned_dir=Path("."), extension=".txt")
+```
+
+**Порядок выполнения:** `__init__` присваивает поля → `__post_init__` проверяет их.
+
+---
+
+#### frozen=True — иммутабельный объект
+
+`@dataclass(frozen=True)` запрещает изменение полей после создания объекта. Попытка присвоить новое значение вызывает `FrozenInstanceError`.
+
+```python
+@dataclass(frozen=True)
+class ProcessResult:
+    processed: list[Path]
+    output_dir: Path
+
+    @property
+    def total(self) -> int:
+        return len(self.processed)
+```
+
+```python
+result = process_files(files, output_dir)
+
+# Попытка изменить поле:
+result.output_dir = Path("/other")   # ← FrozenInstanceError!
+result.processed = []                # ← FrozenInstanceError!
+
+# Но(!) содержимое изменяемых объектов внутри можно трогать:
+result.processed.append(Path("/new"))  # ← это РАБОТАЕТ (список сам изменяемый)
+                                       # frozen защищает только переприсваивание
+```
+
+**Когда использовать `frozen=True`:**
+
+- Когда объект является "результатом" — его создали один раз и он не должен меняться.
+- `ProcessResult` — результат операции копирования. Он иммутабелен: файлы уже скопированы, менять объект бессмысленно.
+- `ScanResult` — мутабелен намеренно: поле `errors` может пополняться в будущем.
+
+---
+
+#### Итоговый код в проекте
+
+**`core/models.py`** — новый файл с доменными моделями:
+
+```python
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class ScanResult:
+    files: list[Path]
+    scanned_dir: Path
+    extension: str
+    recursive: bool = False
+    errors: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.extension.startswith("."):
+            raise ValueError(f"расширение должно начинаться с точки, получено: {self.extension!r}")
+
+    @property
+    def total(self) -> int:
+        return len(self.files)
+
+
+@dataclass(frozen=True)
+class ProcessResult:
+    processed: list[Path]
+    output_dir: Path
+
+    @property
+    def total(self) -> int:
+        return len(self.processed)
+```
+
+**`core/scanner.py`** — теперь возвращает `ScanResult`:
+
+```python
+def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> ScanResult:
+    ...
+    return ScanResult(
+        files=files,
+        scanned_dir=input_dir,
+        extension=normalized_extension,
+        recursive=recursive,
+    )
+```
+
+**`core/processor.py`** — теперь возвращает `ProcessResult`:
+
+```python
+def process_files(files: list[Path], output_dir: Path) -> ProcessResult:
+    ...
+    return ProcessResult(processed=processed, output_dir=output_dir)
+```
+
+**`cli.py`** — код стал проще, контекст не нужно передавать вручную:
+
+```python
+# scan:
+result = scan_files(input_dir=input_dir, extension=extension, recursive=recursive)
+if not result.files:
+    ...
+print_scan_results(result)   # result знает про recursive сам
+
+# process:
+scan_result = scan_files(...)
+process_result = process_files_with_progress(scan_result.files, output_dir)
+print_process_results(process_result)   # total и output_dir уже внутри
+```
+
+**`api.py`** — Pydantic-класс `ScanResult` переименован в `ScanResponse`, чтобы не конфликтовать с доменным датаклассом. Разные уровни — разные имена:
+
+```python
+class ScanResponse(BaseModel):      # HTTP-схема ответа (Pydantic)
+    total: int
+    files: list[FileInfo]
+
+# Эндпоинт конвертирует доменный ScanResult → HTTP ScanResponse:
+scan_result = scan_files(...)       # доменный dataclass
+file_infos = [FileInfo(...) for f in scan_result.files]
+return ScanResponse(total=scan_result.total, files=file_infos)
+```
+
+---
+
+#### Dataclass vs Pydantic vs TypedDict
+
+| | `@dataclass` | `pydantic.BaseModel` | `TypedDict` |
+|---|---|---|---|
+| Откуда | stdlib | сторонняя библиотека | stdlib |
+| Валидация типов | нет (только аннотации) | да, при создании | нет |
+| JSON сериализация | нет (нужен `asdict`) | встроена | нет |
+| Производительность | быстрый | медленнее | самый быстрый |
+| Когда использовать | доменные модели, результаты | API-схемы, конфиг | только аннотации |
+
+В нашем проекте:
+- **`@dataclass`** — для `ScanResult` и `ProcessResult` (доменный слой, никакого JSON)
+- **`pydantic.BaseModel`** — для `ScanResponse`, `FileInfo` в `api.py` (HTTP-ответы с сериализацией)
+- **`pydantic-settings`** — для `Settings` в `config.py` (конфиг из `.env`)
+
+---
+
+#### Что изменилось в архитектуре
+
+```
+До:
+scan_files()  →  list[Path]   →  cli.py берёт файлы + отдельно передаёт recursive, input_dir
+
+После:
+scan_files()  →  ScanResult   →  cli.py берёт result и всё нужное уже внутри
+                   ├── files
+                   ├── scanned_dir    # знает откуда
+                   ├── extension      # знает что искали
+                   ├── recursive      # знает режим поиска
+                   ├── total          # вычисляется автоматически
+                   └── errors         # место для предупреждений
+```
+
+Слои больше не обмениваются "сырыми" структурами (`list[Path]`). Они передают **объекты с контекстом**, которые несут всё необходимое для следующего шага.
 
 ---
 

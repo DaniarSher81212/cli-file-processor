@@ -8,6 +8,7 @@
 import logging
 from pathlib import Path
 
+from cli_file_processor.core.models import ScanResult
 from cli_file_processor.exceptions import InputDirNotFoundError, InputNotADirectoryError
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def normalize_extension(extension: str) -> str:
     return extension
 
 
-def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> list[Path]:
+def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> ScanResult:
     """
     Ищет файлы с указанным расширением в папке.
 
@@ -42,7 +43,7 @@ def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> list
         recursive — если True, ищет и во всех вложенных подпапках
 
     Возвращает:
-        Список объектов Path — найденные файлы. Пустой список если ничего не нашли.
+        ScanResult — объект с найденными файлами и контекстом сканирования.
     """
     if not input_dir.exists():
         raise InputDirNotFoundError(input_dir)
@@ -62,4 +63,9 @@ def scan_files(input_dir: Path, extension: str, recursive: bool = False) -> list
         files = list(input_dir.glob(f"*{normalized_extension}"))
 
     logger.debug("найдено файлов: %d", len(files))
-    return files
+    return ScanResult(
+        files=files,
+        scanned_dir=input_dir,
+        extension=normalized_extension,
+        recursive=recursive,
+    )
